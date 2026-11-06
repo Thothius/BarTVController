@@ -10,6 +10,7 @@ if not exist .venv\Scripts\activate.bat (
 )
 call .venv\Scripts\activate.bat
 
+timeout /t 2 /nobreak >nul
 start "" http://localhost:8000/
 python -m bartv.run 8000
 pause
