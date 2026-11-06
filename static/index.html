@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bar TV Controller</title>
+<style>
+  :root { color-scheme: dark; --bg:#111; --card:#1c1c1e; --accent:#ff9f0a; --ok:#30d158; --err:#ff453a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:#eee; }
+  main { max-width: 480px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+  h1 { font-size: 1.3rem; margin: 4px 0; }
+  .card { background: var(--card); border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+  .card h2 { font-size: .85rem; text-transform: uppercase; letter-spacing: .05em; color:#999; margin:0; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button { font: inherit; font-size: 1.05rem; padding: 16px; border: 0; border-radius: 12px; background:#2c2c2e; color:#fff; cursor:pointer; }
+  button:active { transform: scale(.98); }
+  button.primary { background: var(--accent); color:#000; font-weight: 700; font-size: 1.25rem; padding: 22px; }
+  button:disabled { opacity: .5; }
+  input[type=range] { width: 100%; height: 36px; }
+  .status { font-size: .9rem; color:#bbb; display:grid; gap:4px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; background:var(--err); }
+  .dot.on { background: var(--ok); }
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background:#333; padding: 10px 16px; border-radius: 10px; opacity: 0; transition: opacity .3s; pointer-events:none; }
+  #toast.show { opacity: 1; }
+  #toast.err { background: var(--err); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bar TV Controller</h1>
+
+  <section class="card">
+    <button class="primary" id="adBtn" onclick="post('/api/trigger-ad', {}, 'Ad break started')">Play Ad Now</button>
+    <div class="status" id="status">Loading…</div>
+  </section>
+
+  <section class="card">
+    <h2>Input</h2>
+    <div class="row">
+      <button id="inNormal">Live TV</button>
+      <button id="inSignage">Signage</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Volume <span id="volVal"></span></h2>
+    <input type="range" id="vol" min="0" max="100" value="20">
+    <div class="row">
+      <button onclick="post('/api/mute', {mute: true}, 'Muted')">Mute</button>
+      <button onclick="post('/api/mute', {mute: false}, 'Unmuted')">Unmute</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Schedule</h2>
+    <button id="schedBtn">…</button>
+  </section>
+
+  <section class="card">
+    <h2>Setup</h2>
+    <button id="pairBtn">Pair TV</button>
+  </section>
+</main>
+<div id="toast"></div>
+<script>
+let state = {};
+const $ = (id) => document.getElementById(id);
+
+function toast(msg, err) {
+  const t = $('toast');
+  t.textContent = msg; t.className = 'show' + (err ? ' err' : '');
+  clearTimeout(t._h); t._h = setTimeout(() => t.className = '', 2500);
+}
+
+async function post(url, body, okMsg) {
+  try {
+    const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : r.statusText);
+    if (okMsg) toast(okMsg);
+    refresh();
+    return data;
+  } catch (e) { toast(e.message, true); }
+}
+
+function fmtTime(iso) { return iso ? new Date(iso).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '—'; }
+
+async function refresh() {
+  try {
+    state = await (await fetch('/api/status')).json();
+  } catch { $('status').textContent = 'Backend unreachable'; return; }
+  $('status').innerHTML = `
+    <div><span class="dot ${state.paired ? 'on' : ''}"></span>TV ${state.paired ? 'paired' : 'not paired'} (${state.tv_ip})${state.mock_tv ? ' [mock]' : ''}</div>
+    <div><span class="dot ${state.displays_connected ? 'on' : ''}"></span>${state.displays_connected} display screen(s) connected</div>
+    <div>${state.ad_running ? '<b>Ad playing…</b>' : 'Next ad: ' + (state.scheduler_enabled ? fmtTime(state.next_ad) : 'paused')} · Last: ${fmtTime(state.last_ad)}</div>
+    ${state.last_error ? `<div style="color:var(--err)">Last error: ${state.last_error}</div>` : ''}`;
+  $('adBtn').disabled = state.ad_running;
+  $('schedBtn').textContent = state.scheduler_enabled ? 'Pause auto ads' : 'Resume auto ads';
+  $('inNormal').textContent = `Live TV (${state.normal_input})`;
+  $('inSignage').textContent = `Signage (${state.signage_input})`;
+}
+
+$('inNormal').onclick = () => post('/api/input', {input: state.normal_input}, 'Switched to live TV');
+$('inSignage').onclick = () => post('/api/input', {input: state.signage_input}, 'Switched to signage');
+$('schedBtn').onclick = () => post('/api/scheduler', {enabled: !state.scheduler_enabled}, state.scheduler_enabled ? 'Auto ads paused' : 'Auto ads resumed');
+$('pairBtn').onclick = async () => {
+  $('pairBtn').disabled = true; $('pairBtn').textContent = 'Accept the prompt on the TV…';
+  await post('/api/pair', {}, 'TV paired');
+  $('pairBtn').disabled = false; $('pairBtn').textContent = 'Pair TV';
+};
+const vol = $('vol');
+vol.oninput = () => $('volVal').textContent = vol.value;
+vol.onchange = () => post('/api/volume', {level: +vol.value}, 'Volume ' + vol.value);
+$('volVal').textContent = vol.value;
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signage Display</title>
+<style>
+  html, body { margin:0; height:100%; background:#000; overflow:hidden; cursor:none; }
+  video { position:fixed; inset:0; width:100%; height:100%; object-fit:contain; background:#000; display:none; }
+  #idle { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#333; font:2vw system-ui, sans-serif; }
+  #unlock { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; background:#000c; font:3vw system-ui, sans-serif; cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="idle">Bar TV signage ready</div>
+<video id="v" playsinline preload="auto"></video>
+<div id="unlock">Click once to enable sound</div>
+<script>
+const v = document.getElementById('v');
+const idle = document.getElementById('idle');
+const unlock = document.getElementById('unlock');
+
+// Browsers block autoplay with sound until the page gets one user gesture.
+// Alternatively launch Chrome with --autoplay-policy=no-user-gesture-required.
+unlock.onclick = () => { unlock.remove(); v.muted = false; v.play().then(() => v.pause()).catch(() => {}); };
+if (navigator.userActivation && navigator.userActivation.hasBeenActive) unlock.remove();
+
+function start(src) {
+  if (!v.src.endsWith(src)) v.src = src;
+  v.currentTime = 0; v.muted = false;
+  v.style.display = 'block'; idle.style.display = 'none';
+  v.play().catch(() => { v.muted = true; v.play(); });
+}
+function stop() {
+  v.pause(); v.style.display = 'none'; idle.style.display = 'flex';
+}
+v.onended = stop;
+
+function connect() {
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/display');
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'ad_start') start(m.src);
+    if (m.type === 'ad_end') stop();
+  };
+  ws.onclose = () => setTimeout(connect, 2000);
+}
+connect();
+</script>
+</body>
+</html>
