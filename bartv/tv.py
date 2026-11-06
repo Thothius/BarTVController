@@ -50,25 +50,29 @@ class TVController:
         return cls(self.cfg.tv_ip, client_key=client_key)
 
     async def _ensure(self):
+        """Returns False when no client key is stored yet (not an error)."""
         if self.client and self.client.is_connected():
-            return self.client
+            return True
         if not self.cfg.client_key:
-            raise RuntimeError("TV not paired yet - use 'Pair TV' first")
+            return False
         self.client = self._new_client(self.cfg.client_key)
         await self.client.connect()
-        return self.client
+        return True
 
     async def _call(self, method: str, *args):
         try:
-            client = await self._ensure()
+            if not await self._ensure():
+                raise RuntimeError("Pair the TV first")
+            client = self.client
             return await getattr(client, method)(*args)
         except RuntimeError:
             raise
         except Exception:
             log.warning("TV call %s failed, reconnecting once", method, exc_info=True)
             await self.disconnect()
-            client = await self._ensure()
-            return await getattr(client, method)(*args)
+            if not await self._ensure():
+                raise RuntimeError("Pair the TV first")
+            return await getattr(self.client, method)(*args)
 
     async def set_input(self, input_id: str):
         async with self._lock:

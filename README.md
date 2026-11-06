@@ -1,16 +1,16 @@
 # BarTVController
 
-Local signage & ad-break controller for an LG webOS TV (built for the UQ75003LF). Staff control the TV from a phone; every 30 minutes (:00 and :30) the TV switches to the signage input, plays the promo video with sound, then switches back to live TV.
+Local signage & ad-break controller for an LG webOS TV (built for the UQ75003LF). Staff control the TV from any phone browser; every 30 minutes (:00 and :30) the TV switches to the signage input, plays the promo video with sound, then switches back to live TV.
 
 ```
-[ Staff phone / terminal browser ]
+[ Staff phone browser ]
         |  HTTP (venue Wi-Fi)
         v
 +----------------------------------------------+
-| FastAPI backend (terminal PC)                |
-|  /            staff dashboard                |
+| FastAPI backend (Windows terminal PC)        |
+|  /            staff dashboard (PIN)          |
 |  /display     fullscreen kiosk page          |
-|  /api/*       ad, input, volume, mute, pair  |
+|  /api/*       ad, input, volume, stream, pin |
 |  scheduler    ad break every N minutes       |
 +-----------+------------------------+---------+
             | webOS WebSocket API    | WebSocket /ws/display
@@ -18,63 +18,97 @@ Local signage & ad-break controller for an LG webOS TV (built for the UQ75003LF)
    LG TV: HDMI_1 = live TV   HDMI_2 = PC running /display in kiosk mode
 ```
 
-Ad break: switch TV to `signage_input` -> wait `input_switch_delay_seconds` -> `/display` plays the promo -> after `ad_duration_seconds` switch back to `normal_input`.
+Ad break: switch TV to `signage_input` → wait `input_switch_delay_seconds` → `/display` plays the promo → after `ad_duration_seconds` switch back to `normal_input`.
 
-## Hardware hookup
-- **HDMI 1**: live TV / sports box.
-- **HDMI 2**: the terminal PC (or any mini PC / stick) showing `http://<server>:8000/display` fullscreen in Chrome:
-  ```
-  google-chrome --kiosk --autoplay-policy=no-user-gesture-required http://localhost:8000/display
-  ```
-  Without the autoplay flag, click the page once after opening it so the promo can play with sound.
+## Quick start (Windows)
+
+```bat
+git clone https://github.com/Thothius/BarTVController.git
+cd BarTVController
+setup.bat      :: once: creates .venv, installs deps, makes config.json
+:: edit config.json -> set "tv_ip" to your TV's IP
+start.bat      :: starts server + opens http://localhost:8000/
+```
+
+Python 3.10+ must be installed (tick "Add python.exe to PATH" in the installer). On the phone, open `http://<terminal-pc-ip>:8000/` on the venue Wi-Fi.
+
+## Pairing (the handshake)
+
+The first time — and again whenever the TV forgets the app (e.g. after a firmware update, which shows "An unknown application requested access"):
+
+1. Dashboard → **Pair TV**.
+2. The TV shows **"Allow BarTVController to access this TV?"** → press **Accept** on the remote within 60 s.
+3. The `client_key` is saved to `config.json`; everything is headless after that.
+
+On every `start.bat` launch the server also does a best-effort check with the saved key; if the TV rejects it, the key is cleared and the dashboard shows "not paired" — just pair once more.
+
+## Dashboard
+
+Bare bones, one screen:
+
+- **Ad Break** — interrupt now (refused while one is running; auto ads every 30 min can be paused below)
+- **Live / Signage** — switch TV input
+- **Volume slider + Mute**
+- **Play on TV** — pick a file dropped into `static/media/` (listed automatically) or paste any direct media URL; Video / Audio / Image modes
+- **Pair TV**, **Auto ads** toggle
+
+Every action asks for the **PIN** once per device (stored in the browser afterwards). The PIN is generated on first run, printed in the `start.bat` console, and stored in `config.json` — change it there if needed.
+
+## HDMI 2 display device
+
+Something must be plugged into HDMI 2 showing `/display` fullscreen — the terminal PC itself works:
+
+```bat
+start "" chrome --kiosk --autoplay-policy=no-user-gesture-required http://localhost:8000/display
+```
+
+(Any small stick/mini PC works too — point its browser at `http://<pc-ip>:8000/display`. Without the autoplay flag, click the page once so promo audio is allowed.)
 
 ## TV setup (bypass the smart home screen)
-1. Settings -> General -> System -> Additional Settings -> Home Settings: set **Power On Screen** to **Recent Input**; disable **Home Auto Launch** and **Home Promotion**.
-2. Settings -> General -> Devices -> External Devices: turn on **TV On With Mobile** / **Turn On Via Wi-Fi**.
-3. Give the TV a fixed IP (DHCP reservation on the router).
 
-## Install & run
-```
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
-cp config.example.json config.json   # set tv_ip
-cp /path/to/your/promo.mp4 static/media/promo.mp4
-uvicorn bartv.main:app --host 0.0.0.0 --port 8000
-```
-Open `http://<terminal-pc-ip>:8000/` on a phone connected to the venue Wi-Fi.
+1. Settings → General → System → Additional Settings → Home Settings: **Power On Screen** = **Recent Input**; disable **Home Auto Launch** and **Home Promotion**.
+2. Settings → General → Devices → External Devices: **TV On With Mobile** / **Turn On Via Wi-Fi** = on.
+3. Give the TV a fixed IP (router DHCP reservation).
 
-## Pairing
-Tap **Pair TV** on the dashboard (or run `python -m bartv.pair`), then press **Accept** on the TV prompt with the physical remote within 60 s. The client key is saved to `config.json`, so later runs are headless.
+## `config.json`
 
-## Configuration (`config.json`)
 | Key | Default | Meaning |
 |---|---|---|
 | `tv_ip` | `192.168.1.150` | TV address |
 | `client_key` | `null` | Filled in by pairing |
 | `normal_input` / `signage_input` | `HDMI_1` / `HDMI_2` | webOS input IDs |
 | `ad_interval_minutes` | `30` | Divisors of 60 align to the clock (:00, :30) |
-| `ad_duration_seconds` | `30` | How long the signage input stays on |
-| `input_switch_delay_seconds` | `2` | Wait for HDMI switch before playing |
-| `promo_video_path` | `static/media/promo.mp4` | Video served to `/display` |
-| `scheduler_enabled` | `true` | Auto ads on/off (also toggled from the dashboard) |
+| `ad_duration_seconds` | `30` | How long signage stays on |
+| `input_switch_delay_seconds` | `2` | HDMI settle time before playing |
+| `promo_video_path` | `static/media/promo.mp4` | Ad video |
+| `scheduler_enabled` | `true` | Auto ads on/off |
 | `mock_tv` | `false` | Fake TV for testing without hardware |
+| `pin` | generated | Dashboard PIN (6 digits) |
+| `media_dir` | `static/media` | Folder served under `/media/` and listed on the dashboard |
 
 ## API
+
+All `POST` endpoints need header `X-Pin: <pin>` (the dashboard handles this).
+
 | Method | Path | Body |
 |---|---|---|
-| GET | `/api/status` | - |
-| POST | `/api/trigger-ad` | - |
+| GET | `/api/status` | — |
+| POST | `/api/trigger-ad` | — |
 | POST | `/api/volume` | `{"level": 0-100}` |
 | POST | `/api/mute` | `{"mute": true}` |
-| POST | `/api/input` | `{"input": "HDMI_1"}` |
-| POST | `/api/pair` | - |
+| POST | `/api/input` | `{"input": "HDMI_1"}` (only the two configured inputs) |
+| POST | `/api/stream` | `{"url": "…", "kind": "video"\|"audio"\|"image"}` → pushes to all `/display` screens |
+| POST | `/api/stop` | — |
+| POST | `/api/pair` | — triggers the TV pairing prompt |
 | POST | `/api/scheduler` | `{"enabled": false}` |
-
-`scripts/tv_control.py [seconds]` does a one-off input switch test from the terminal.
+| GET | `/api/files` | media files in `media_dir` |
+| WS | `/ws/display` | kiosk event channel |
 
 ## Development
-```
+
+```bat
 pip install -r requirements-dev.txt
 pytest
 ```
-There is no auth: run it only on a trusted venue network.
+
+Linux/macOS works the same minus the .bat files: `uvicorn bartv.main:app --host 0.0.0.0 --port 8000`.

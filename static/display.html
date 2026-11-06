@@ -3,45 +3,58 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Signage Display</title>
+<title>Display</title>
 <style>
   html, body { margin:0; height:100%; background:#000; overflow:hidden; cursor:none; }
-  video { position:fixed; inset:0; width:100%; height:100%; object-fit:contain; background:#000; display:none; }
-  #idle { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#333; font:2vw system-ui, sans-serif; }
+  #media { position:fixed; inset:0; width:100%; height:100%; object-fit:contain; background:#000; display:none; }
+  #idle { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#2a2a2a; font:2vw system-ui, sans-serif; }
   #unlock { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; background:#000c; font:3vw system-ui, sans-serif; cursor:pointer; }
+  #clock { position:fixed; right:2vw; bottom:2vw; color:#333; font:1.4vw system-ui, sans-serif; }
 </style>
 </head>
 <body>
-<div id="idle">Bar TV signage ready</div>
-<video id="v" playsinline preload="auto"></video>
-<div id="unlock">Click once to enable sound</div>
+<div id="idle">BAR TV</div>
+<video id="media" playsinline></video>
+<audio id="mediaAudio" style="display:none"></audio>
+<img id="mediaImg" style="display:none;position:fixed;inset:0;width:100%;height:100%;object-fit:contain" alt="">
+<div id="clock"></div>
+<div id="unlock">Click once for sound</div>
 <script>
-const v = document.getElementById('v');
+const vid = document.getElementById('media');
+const aud = document.getElementById('mediaAudio');
+const img = document.getElementById('mediaImg');
 const idle = document.getElementById('idle');
 const unlock = document.getElementById('unlock');
+const clock = document.getElementById('clock');
 
-// Browsers block autoplay with sound until the page gets one user gesture.
-// Alternatively launch Chrome with --autoplay-policy=no-user-gesture-required.
-unlock.onclick = () => { unlock.remove(); v.muted = false; v.play().then(() => v.pause()).catch(() => {}); };
+unlock.onclick = () => { unlock.remove(); vid.muted = false; aud.muted = false; };
 if (navigator.userActivation && navigator.userActivation.hasBeenActive) unlock.remove();
+setInterval(() => { clock.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }, 1000);
 
-function start(src) {
-  if (!v.src.endsWith(src)) v.src = src;
-  v.currentTime = 0; v.muted = false;
-  v.style.display = 'block'; idle.style.display = 'none';
-  v.play().catch(() => { v.muted = true; v.play(); });
+function hideAll() {
+  vid.style.display = 'none'; aud.style.display = 'none'; img.style.display = 'none';
+  vid.pause(); aud.pause();
+  idle.style.display = 'flex';
 }
-function stop() {
-  v.pause(); v.style.display = 'none'; idle.style.display = 'flex';
+function play(url, kind) {
+  hideAll(); idle.style.display = 'none';
+  if (kind === 'audio') {
+    aud.src = url; aud.style.display = 'block'; aud.play().catch(() => { aud.muted = true; aud.play(); });
+  } else if (kind === 'image') {
+    img.src = url; img.style.display = 'block';
+  } else {
+    vid.src = url; vid.style.display = 'block'; vid.muted = false;
+    vid.play().catch(() => { vid.muted = true; vid.play(); });
+    vid.onended = () => { vid.muted = false; hideAll(); };
+  }
 }
-v.onended = stop;
 
 function connect() {
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/display');
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
-    if (m.type === 'ad_start') start(m.src);
-    if (m.type === 'ad_end') stop();
+    if (m.type === 'ad_start' || m.type === 'media_start') play(m.url || m.src, m.kind || 'video');
+    if (m.type === 'ad_end' || m.type === 'media_stop') { hideAll(); }
   };
   ws.onclose = () => setTimeout(connect, 2000);
 }

@@ -8,5 +8,7 @@
   "input_switch_delay_seconds": 2,
   "promo_video_path": "static/media/promo.mp4",
   "scheduler_enabled": true,
-  "mock_tv": false
+  "mock_tv": false,
+  "pin": "",
+  "media_dir": "static/media"
 }
