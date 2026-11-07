@@ -201,3 +201,5 @@ Programs + ad pool. Semantics agreed with Ted:
   from home. Live control stays in the right rail. Static-only change.
 
 - CageFiction startup channel + mock ad pool (3 rendered 15s slates: black bg, bold promo text); playlist shuffle per program + Skip clip control; live rail regrouped (Playback / TV input / Sound / Auto ads); 30 tests green
+
+- Asset roles (content/commercial) with grouped Assets view; program pickers role-aware
