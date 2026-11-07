@@ -1,8 +1,8 @@
 import asyncio
 import logging
-from typing import Optional
 
 from aiowebostv import WebOsClient
+from aiowebostv.exceptions import WebOsTvPairError
 
 from .config import Config, save_config
 
@@ -38,16 +38,34 @@ class MockClient:
     async def set_mute(self, mute):
         self.calls.append(("set_mute", mute))
 
+    async def get_inputs(self):
+        return [{"id": "HDMI_1"}, {"id": "HDMI_2"}]
+
 
 class TVController:
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        self.client: Optional[WebOsClient] = None
+        self.client = None
         self._lock = asyncio.Lock()
+        self.last_inputs: list[str] = []
 
     def _new_client(self, client_key):
         cls = MockClient if self.cfg.mock_tv else WebOsClient
         return cls(self.cfg.tv_ip, client_key=client_key)
+
+    async def _discover_inputs(self):
+        """Best-effort fetch of the TV's input list for status/logging."""
+        try:
+            raw = await self.client.get_inputs()
+            ids = []
+            for item in raw or []:
+                if isinstance(item, dict):
+                    ids.append(item.get("id") or item.get("inputId") or "")
+                elif isinstance(item, str):
+                    ids.append(item)
+            self.last_inputs = [i for i in ids if i]
+        except Exception:
+            log.debug("get_inputs failed", exc_info=True)
 
     async def _ensure(self):
         """Returns False when no client key is stored yet (not an error)."""
@@ -56,7 +74,16 @@ class TVController:
         if not self.cfg.client_key:
             return False
         self.client = self._new_client(self.cfg.client_key)
-        await self.client.connect()
+        try:
+            await self.client.connect()
+        except WebOsTvPairError:
+            # TV rejected the stored key (e.g. after a firmware update).
+            self.client = None
+            self.cfg.client_key = None
+            save_config(self.cfg)
+            log.warning("Saved client key rejected by TV - pairing required again")
+            raise RuntimeError("TV rejected the saved key - press 'Pair TV'")
+        await self._discover_inputs()
         return True
 
     async def _call(self, method: str, *args):
@@ -99,6 +126,12 @@ class TVController:
             self.client = client
             self.cfg.client_key = client.client_key
             save_config(self.cfg)
+            await self._discover_inputs()
+            missing = [i for i in (self.cfg.normal_input, self.cfg.signage_input)
+                       if self.last_inputs and i not in self.last_inputs]
+            if missing:
+                log.warning("Configured inputs %s not in TV inputs %s - check config.json",
+                            missing, self.last_inputs)
             return client.client_key
 
     async def disconnect(self):

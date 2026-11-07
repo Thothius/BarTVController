@@ -36,16 +36,29 @@ function hideAll() {
   vid.pause(); aud.pause();
   idle.style.display = 'flex';
 }
+const AUDIO_EXT = ['mp3', 'aac', 'wav', 'm4a', 'ogg', 'flac'];
+const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+
+function sniffKind(url, kind) {
+  if (kind !== 'video') return kind;
+  const ext = (url.split('?')[0].split('#')[0].split('.').pop() || '').toLowerCase();
+  if (AUDIO_EXT.includes(ext)) return 'audio';
+  if (IMAGE_EXT.includes(ext)) return 'image';
+  return 'video';
+}
+
 function play(url, kind) {
+  kind = sniffKind(url, kind || 'video');
   hideAll(); idle.style.display = 'none';
   if (kind === 'audio') {
     aud.src = url; aud.style.display = 'block'; aud.play().catch(() => { aud.muted = true; aud.play(); });
+    aud.onended = () => { aud.onended = null; hideAll(); };
   } else if (kind === 'image') {
     img.src = url; img.style.display = 'block';
   } else {
     vid.src = url; vid.style.display = 'block'; vid.muted = false;
     vid.play().catch(() => { vid.muted = true; vid.play(); });
-    vid.onended = () => { vid.muted = false; hideAll(); };
+    vid.onended = () => { vid.muted = false; vid.onended = null; hideAll(); };
   }
 }
 

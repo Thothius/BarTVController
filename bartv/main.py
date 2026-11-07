@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import secrets
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -72,7 +74,7 @@ app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 def require_pin(request: Request):
     if not cfg.pin:
         return
-    if request.headers.get("x-pin") != cfg.pin:
+    if not secrets.compare_digest(request.headers.get("x-pin", ""), cfg.pin):
         raise HTTPException(401, "Wrong or missing PIN")
 
 
@@ -106,10 +108,16 @@ async def display():
     return FileResponse(ROOT / "static" / "display.html")
 
 
+def promo_file():
+    # promo_video_path is repo-relative and must live under static/ to be servable.
+    return ROOT / cfg.promo_video_path
+
+
 @app.get("/media/{path:path}")
 async def media(path: str):
-    file = (media_root() / path).resolve()
-    if not str(file).startswith(str(media_root().resolve())) or not file.is_file():
+    root = media_root().resolve()
+    file = (root / path).resolve()
+    if not file.is_relative_to(root) or not file.is_file():
         raise HTTPException(404, "Not found")
     return FileResponse(file)
 
@@ -137,6 +145,8 @@ async def status():
         "displays_connected": len(hub.clients),
         "mock_tv": cfg.mock_tv,
         "pin_set": bool(cfg.pin),
+        "promo_exists": promo_file().is_file(),
+        "tv_inputs": tv.last_inputs,
     }
 
 
@@ -159,13 +169,18 @@ class SchedulerReq(BaseModel):
 class StreamReq(BaseModel):
     url: str = Field(min_length=1)
     name: str = ""
-    kind: str = "video"  # video | audio | image
+    kind: Literal["video", "audio", "image"] = "video"
 
 
 @app.post("/api/trigger-ad", dependencies=[Depends(require_pin)])
 async def trigger_ad():
     if not cfg.client_key:
         raise HTTPException(409, "Pair the TV first")
+    if not promo_file().is_file():
+        raise HTTPException(409, "Promo video missing - drop an mp4 into static/media/ "
+                                 "(or set promo_video_path in config.json)")
+    if not cfg.promo_video_path.startswith("static/"):
+        raise HTTPException(409, "promo_video_path must point inside static/ to be playable")
     if not ads.trigger():
         raise HTTPException(409, "Ad break already running")
     return {"ok": True}

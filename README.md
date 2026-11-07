@@ -39,6 +39,7 @@ The first time — and again whenever the TV forgets the app (e.g. after a firmw
 1. Dashboard → **Pair TV**.
 2. The TV shows **"Allow BarTVController to access this TV?"** → press **Accept** on the remote within 60 s.
 3. The `client_key` is saved to `config.json`; everything is headless after that.
+4. Right after pairing (and on every reconnect) the server reads the TV's input list — it shows up under **TV inputs** on the dashboard and a warning is logged if `normal_input`/`signage_input` don't match (e.g. your TV calls them `HDMI_1`/`HDMI_2` vs `HDMI1`/`HDMI2`).
 
 On every `start.bat` launch the server also does a best-effort check with the saved key; if the TV rejects it, the key is cleared and the dashboard shows "not paired" — just pair once more.
 
@@ -52,7 +53,7 @@ Bare bones, one screen:
 - **Play on TV** — pick a file dropped into `static/media/` (listed automatically) or paste any direct media URL; Video / Audio / Image modes
 - **Pair TV**, **Auto ads** toggle
 
-Every action asks for the **PIN** once per device (stored in the browser afterwards). The PIN is generated on first run, printed in the `start.bat` console, and stored in `config.json` — change it there if needed.
+Every action asks for the **PIN** once per device (stored in the browser afterwards). The PIN is generated on first run, printed in the `start.bat` console, and stored in `config.json` — change it there and restart to rotate, or delete it to regenerate. "Reset saved PIN" on the dashboard forgets it on that device.
 
 ## HDMI 2 display device
 
@@ -85,6 +86,8 @@ start "" chrome --kiosk --autoplay-policy=no-user-gesture-required http://localh
 | `mock_tv` | `false` | Fake TV for testing without hardware |
 | `pin` | generated | Dashboard PIN (6 digits) |
 | `media_dir` | `static/media` | Folder served under `/media/` and listed on the dashboard |
+
+Edit `config.json` then **restart** the server for changes to take effect (the dashboard's auto-ads toggle is the only live setting). `promo_video_path` must point inside `static/` — if the file is missing, "Ad Break" is refused with a clear message instead of showing a black screen.
 
 ## API
 
