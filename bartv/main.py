@@ -1,19 +1,20 @@
 import asyncio
+import json
 import logging
 import secrets
 from contextlib import asynccontextmanager
 from typing import Literal, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .ads import AdRunner, DisplayHub
+from .ads import DisplayHub
 from .config import CONFIG_PATH, ROOT, load_config, save_config
+from .engine import ProgramEngine
 from .library import MAX_UPLOAD_BYTES, AssetStore, ProgramStore
 from .tv import TVController, discover_tvs
 
@@ -23,23 +24,17 @@ log = logging.getLogger("bartv")
 cfg = load_config()
 tv = TVController(cfg)
 hub = DisplayHub()
-ads = AdRunner(cfg, tv, hub)
-scheduler = AsyncIOScheduler()
-JOB_ID = "ad_break"
 assets = AssetStore(ROOT / cfg.media_dir, CONFIG_PATH.parent / "assets.json")
 programs = ProgramStore(CONFIG_PATH.parent / "programs.json")
+engine = ProgramEngine(cfg, tv, hub, programs, assets)
+scheduler = AsyncIOScheduler()
+JOB_ID = "ad_break"
 
 MEDIA_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv", ".m3u8", ".mp3", ".aac", ".wav", ".m4a", ".jpg", ".jpeg", ".png", ".webp"}
 
 
-def ad_trigger(minutes: int):
-    if 0 < minutes <= 60 and 60 % minutes == 0:
-        return CronTrigger(minute=f"*/{minutes}")
-    return IntervalTrigger(minutes=minutes)
-
-
-async def scheduled_ad():
-    ads.trigger()
+async def scheduled_tick():
+    engine.tick()
 
 
 async def _startup_handshake():
@@ -59,12 +54,14 @@ async def _startup_handshake():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _startup_handshake()
-    scheduler.add_job(scheduled_ad, ad_trigger(cfg.ad_interval_minutes), id=JOB_ID)
+    scheduler.add_job(scheduled_tick, IntervalTrigger(minutes=1), id=JOB_ID)
     scheduler.start()
     if not cfg.scheduler_enabled:
         scheduler.pause_job(JOB_ID)
+    await engine.apply_program()
     yield
     scheduler.shutdown(wait=False)
+    await engine.shutdown()
     await tv.disconnect()
 
 
@@ -135,16 +132,18 @@ async def favicon():
 @app.get("/api/status")
 async def status():
     job = scheduler.get_job(JOB_ID)
+    next_ad = engine.next_ad_at()
     return {
         "paired": bool(cfg.client_key),
         "tv_ip": cfg.tv_ip,
         "normal_input": cfg.normal_input,
         "signage_input": cfg.signage_input,
-        "ad_running": ads.running,
-        "last_ad": ads.last_run,
-        "last_error": ads.last_error,
+        "ad_running": engine.ad_running,
+        "last_ad": engine.last_ad,
+        "last_error": engine.last_error,
         "scheduler_enabled": cfg.scheduler_enabled,
-        "next_ad": job.next_run_time.isoformat(timespec="seconds") if job and job.next_run_time else None,
+        "next_ad": next_ad.isoformat(timespec="seconds") if next_ad else None,
+        "scheduler_job": bool(job and job.next_run_time),
         "displays_connected": len(hub.clients),
         "mock_tv": cfg.mock_tv,
         "pin_set": bool(cfg.pin),
@@ -154,6 +153,8 @@ async def status():
         "pair_error": pair_state["error"],
         "tvs": tv_list(),
         "ad_interval_minutes": cfg.ad_interval_minutes,
+        "active_program": engine.active_program(),
+        "engine": engine.status(),
     }
 
 
@@ -183,12 +184,18 @@ class StreamReq(BaseModel):
 async def trigger_ad():
     if not cfg.client_key:
         raise HTTPException(409, "Pair the TV first")
+    if engine.commercial_pool():
+        # Active program has commercials: play a random pool ad, then resume.
+        if not engine.play_ad("manual"):
+            raise HTTPException(409, "Ad break already running")
+        return {"ok": True}
+    # Legacy promo break.
     if not promo_file().is_file():
         raise HTTPException(409, "Promo video missing - drop an mp4 into static/media/ "
                                  "(or set promo_video_path in config.json)")
     if not cfg.promo_video_path.startswith("static/"):
         raise HTTPException(409, "promo_video_path must point inside static/ to be playable")
-    if not ads.trigger():
+    if not engine.play_ad("manual"):
         raise HTTPException(409, "Ad break already running")
     return {"ok": True}
 
@@ -449,6 +456,7 @@ class ProgramReq(BaseModel):
     base: Literal["tv", "content"] = "content"
     content: list[str] = []
     commercials: list[str] = []
+    ads_per_hour: int = Field(3, ge=0, le=48)
 
 
 class ProgramPatch(BaseModel):
@@ -456,23 +464,35 @@ class ProgramPatch(BaseModel):
     base: Optional[Literal["tv", "content"]] = None
     content: Optional[list[str]] = None
     commercials: Optional[list[str]] = None
+    ads_per_hour: Optional[int] = Field(None, ge=0, le=48)
+
+
+class ActiveProgramReq(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
 
 
 @app.get("/api/programs")
 async def list_programs():
-    return {"programs": programs.list()}
+    active = engine.active_program()
+    active_id = active["id"] if active else None
+    return {"programs": [dict(p, active=(p["id"] == active_id)) for p in programs.list()],
+            "active_id": active_id}
 
 
 @app.post("/api/programs", dependencies=[Depends(require_pin)])
 async def create_program(req: ProgramReq):
-    return programs.create(req.name, req.content, req.commercials, base=req.base)
+    return programs.create(req.name, req.content, req.commercials, base=req.base,
+                           ads_per_hour=req.ads_per_hour)
 
 
 @app.patch("/api/programs/{pid}", dependencies=[Depends(require_pin)])
 async def update_program(pid: str, req: ProgramPatch):
-    p = programs.update(pid, name=req.name, content=req.content, commercials=req.commercials, base=req.base)
+    p = programs.update(pid, name=req.name, content=req.content, commercials=req.commercials,
+                        base=req.base, ads_per_hour=req.ads_per_hour)
     if p is None:
         raise HTTPException(404, "Program not found")
+    if pid == cfg.active_program:
+        await engine.apply_program()
     return p
 
 
@@ -480,16 +500,43 @@ async def update_program(pid: str, req: ProgramPatch):
 async def delete_program(pid: str):
     if not programs.delete(pid):
         raise HTTPException(404, "Program not found")
+    if cfg.active_program == pid:
+        cfg.active_program = "default" if programs.get("default") else None
+        save_config(cfg)
+        await engine.apply_program()
     return {"ok": True}
+
+
+@app.post("/api/programs/active", dependencies=[Depends(require_pin)])
+async def set_active_program(req: ActiveProgramReq):
+    """Make a program the running one: its base content plays and its commercials fire on schedule."""
+    if not programs.get(req.id):
+        raise HTTPException(404, "Program not found")
+    cfg.active_program = req.id
+    save_config(cfg)
+    await engine.apply_program()
+    return await status()
 
 
 @app.websocket("/ws/display")
 async def ws_display(ws: WebSocket):
     await ws.accept()
     hub.clients.add(ws)
+    snap = engine.snapshot_event()
+    if snap:
+        try:
+            await ws.send_text(json.dumps(snap))
+        except Exception:
+            pass
     try:
         while True:
-            await ws.receive_text()
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                continue
+            if msg.get("type") == "ended":
+                engine.notify_ended(str(msg.get("what") or ""))
     except WebSocketDisconnect:
         pass
     finally:

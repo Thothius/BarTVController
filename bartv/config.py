@@ -32,6 +32,8 @@ class Config(BaseModel):
     media_dir: str = "static/media"
     # Known TVs [{ip, name, client_key}] so switching TVs keeps each pairing. Active = tv_ip.
     tvs: list[dict] = []
+    # Active program id in programs.json; the engine runs its base content + commercials.
+    active_program: Optional[str] = None
 
     @property
     def pin_required(self) -> bool:

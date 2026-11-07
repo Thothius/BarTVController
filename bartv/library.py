@@ -139,7 +139,7 @@ class AssetStore:
 
 
 class ProgramStore:
-    """Named wrappers describing what content/commercials to run. Playback engine comes later."""
+    """Named wrappers describing what content/commercials to run (see engine.py for playback)."""
 
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -159,6 +159,9 @@ class ProgramStore:
         slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
         return slug or "program"
 
+    def get(self, pid: str) -> Optional[dict]:
+        return self._out(pid) if pid in self._data else None
+
     def list(self) -> list[dict]:
         return [self._out(pid) for pid in self._data]
 
@@ -166,9 +169,11 @@ class ProgramStore:
         p = self._data[pid]
         return {"id": pid, "name": p.get("name", pid), "base": p.get("base", "content"),
                 "content": p.get("content", []), "commercials": p.get("commercials", []),
+                "ads_per_hour": p.get("ads_per_hour", 3),
                 "created": p.get("created")}
 
-    def create(self, name: str, content: list[str], commercials: list[str], base: str = "content") -> dict:
+    def create(self, name: str, content: list[str], commercials: list[str], base: str = "content",
+               ads_per_hour: int = 3) -> dict:
         slug = self._slug(name)
         pid, i = slug, 2
         while pid in self._data:
@@ -179,13 +184,15 @@ class ProgramStore:
             "base": base,
             "content": list(content),
             "commercials": list(commercials),
+            "ads_per_hour": max(0, min(48, int(ads_per_hour))),
             "created": _now(),
         }
         self._save()
         return self._out(pid)
 
     def update(self, pid: str, name: Optional[str] = None, content: Optional[list[str]] = None,
-               commercials: Optional[list[str]] = None, base: Optional[str] = None) -> Optional[dict]:
+               commercials: Optional[list[str]] = None, base: Optional[str] = None,
+               ads_per_hour: Optional[int] = None) -> Optional[dict]:
         if pid not in self._data:
             return None
         p = self._data[pid]
@@ -197,6 +204,8 @@ class ProgramStore:
             p["content"] = list(content)
         if commercials is not None:
             p["commercials"] = list(commercials)
+        if ads_per_hour is not None:
+            p["ads_per_hour"] = max(0, min(48, int(ads_per_hour)))
         self._save()
         return self._out(pid)
 

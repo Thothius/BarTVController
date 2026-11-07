@@ -167,3 +167,14 @@ Programs + ad pool. Semantics agreed with Ted:
   scheduling), real TV last. Master plan section added; mock TV renamed
   from "Demo TV" to "LGTestTV" across the dashboard. NEXT: restart
   laptop server on new build, then Phase 2 programs engine.
+- 2026-11-07 (Phase 2 engine) — Programs engine built: ProgramEngine
+  (content playlist loop owning the signage input, commercial pool with
+  RNG no-immediate-repeat, ads_per_hour cadence, instant ad, resume
+  after ad, legacy promo fallback when no pool), 1-min scheduler tick,
+  /api/programs + /api/programs/active endpoints, WS snapshot replay +
+  ended events. Kiosk display.html v2: content/ad/media state machine,
+  pause+resume across commercials, image timeouts, reconnect replay.
+  Dashboard: commercials-per-hour control, Set-as-active button, active
+  badges, program summaries show rate + ACTIVE. 21 tests pass (engine
+  unit + API/WS). Browser-verified home/programs/kiosk. NEXT: push,
+  laptop pull + restart, live demo of MMA Night program on LGTestTV.

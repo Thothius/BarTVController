@@ -210,7 +210,8 @@ def test_media_serving_and_traversal(app_env):
 
 def test_scheduler_toggle(app_env):
     client, main, cfg_path = app_env
-    assert str(main.ad_trigger(30).fields[6]) == "*/30"
     s = client.post("/api/scheduler", json={"enabled": False}, headers=H).json()
     assert s["scheduler_enabled"] is False and s["next_ad"] is None
-    assert client.post("/api/scheduler", json={"enabled": True}, headers=H).json()["next_ad"]
+    assert s["engine"]["mode"] == "idle"
+    s = client.post("/api/scheduler", json={"enabled": True}, headers=H).json()
+    assert s["next_ad"] and s["scheduler_job"] is True

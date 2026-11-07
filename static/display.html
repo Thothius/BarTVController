@@ -8,12 +8,14 @@
   html, body { margin:0; height:100%; background:#000; overflow:hidden; cursor:none; }
   #media { position:fixed; inset:0; width:100%; height:100%; object-fit:contain; background:#000; display:none; }
   #idle { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#2a2a2a; font:2vw system-ui, sans-serif; }
+  #badge { position:fixed; left:2vw; top:2vw; color:#444; font:1.2vw system-ui, sans-serif; display:none; }
   #unlock { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; background:#000c; font:3vw system-ui, sans-serif; cursor:pointer; }
   #clock { position:fixed; right:2vw; bottom:2vw; color:#333; font:1.4vw system-ui, sans-serif; }
 </style>
 </head>
 <body>
 <div id="idle">BAR TV</div>
+<div id="badge"></div>
 <video id="media" playsinline></video>
 <audio id="mediaAudio" style="display:none"></audio>
 <img id="mediaImg" style="display:none;position:fixed;inset:0;width:100%;height:100%;object-fit:contain" alt="">
@@ -24,6 +26,7 @@ const vid = document.getElementById('media');
 const aud = document.getElementById('mediaAudio');
 const img = document.getElementById('mediaImg');
 const idle = document.getElementById('idle');
+const badge = document.getElementById('badge');
 const unlock = document.getElementById('unlock');
 const clock = document.getElementById('clock');
 
@@ -31,44 +34,105 @@ unlock.onclick = () => { unlock.remove(); vid.muted = false; aud.muted = false; 
 if (navigator.userActivation && navigator.userActivation.hasBeenActive) unlock.remove();
 setInterval(() => { clock.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }, 1000);
 
-function hideAll() {
-  vid.style.display = 'none'; aud.style.display = 'none'; img.style.display = 'none';
-  vid.pause(); aud.pause();
-  idle.style.display = 'flex';
-}
 const AUDIO_EXT = ['mp3', 'aac', 'wav', 'm4a', 'ogg', 'flac'];
 const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+const IMAGE_SECONDS = 8;
+
+let ws = null;
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
 function sniffKind(url, kind) {
-  if (kind !== 'video') return kind;
+  if (kind && kind !== 'video') return kind;
   const ext = (url.split('?')[0].split('#')[0].split('.').pop() || '').toLowerCase();
   if (AUDIO_EXT.includes(ext)) return 'audio';
   if (IMAGE_EXT.includes(ext)) return 'image';
   return 'video';
 }
 
-function play(url, kind) {
+// content = the program's base layer; it survives commercials (paused + resumed).
+let content = null;      // {url, kind}
+let contentTime = 0;     // resume position for video/audio
+let adActive = false;
+let imageTimer = null;
+
+function showIdle() {
+  vid.style.display = 'none'; aud.style.display = 'none'; img.style.display = 'none';
+  vid.pause(); aud.pause();
+  idle.style.display = 'flex';
+  badge.style.display = 'none';
+}
+function clearImageTimer() { if (imageTimer) { clearTimeout(imageTimer); imageTimer = null; } }
+
+function playMedia(url, kind, ctx, name) {
   kind = sniffKind(url, kind || 'video');
-  hideAll(); idle.style.display = 'none';
+  clearImageTimer();
+  idle.style.display = 'none'; badge.style.display = 'block';
+  badge.textContent = ctx === 'ad' ? 'AD · ' + (name || '') : ctx === 'content' ? 'PROGRAM · ' + (name || '') : (name || '');
+  const finish = () => {
+    if (ctx === 'content' || ctx === 'ad') send({type: 'ended', what: ctx});
+    if (ctx === 'ad') return; // server sends ad_end -> resume content
+    if (ctx === 'media') { showIdle(); }
+  };
   if (kind === 'audio') {
     aud.src = url; aud.style.display = 'block'; aud.play().catch(() => { aud.muted = true; aud.play(); });
-    aud.onended = () => { aud.onended = null; hideAll(); };
+    aud.onended = finish;
   } else if (kind === 'image') {
     img.src = url; img.style.display = 'block';
+    imageTimer = setTimeout(finish, IMAGE_SECONDS * 1000);
   } else {
     vid.src = url; vid.style.display = 'block'; vid.muted = false;
+    if (ctx === 'content' && contentTime > 0) vid.currentTime = contentTime;
     vid.play().catch(() => { vid.muted = true; vid.play(); });
-    vid.onended = () => { vid.muted = false; vid.onended = null; hideAll(); };
+    vid.onended = finish;
+  }
+}
+
+function pauseContent() {
+  if (!content) return;
+  if (content.kind === 'video') contentTime = vid.currentTime || 0;
+  else if (content.kind === 'audio') contentTime = aud.currentTime || 0;
+  vid.pause(); aud.pause();
+}
+
+function playContent(m) {
+  content = {url: m.url, kind: sniffKind(m.url, m.kind || 'video')};
+  contentTime = 0;
+  playMedia(m.url, content.kind, 'content', m.name);
+}
+
+function onMessage(m) {
+  switch (m.type) {
+    case 'content_start': adActive = false; playContent(m); break;
+    case 'content_stop': content = null; contentTime = 0; showIdle(); break;
+    case 'ad_start': {
+      adActive = true;
+      const url = m.url || m.src;
+      if (content) pauseContent();
+      playMedia(url, m.kind || 'video', 'ad', m.name);
+      break;
+    }
+    case 'ad_end': {
+      adActive = false;
+      clearImageTimer();
+      if (content) {
+        // Resume the program's base layer where it left off.
+        playMedia(content.url, content.kind, 'content', null);
+        const t = contentTime; contentTime = 0;
+        if (content.kind === 'video') { vid.onloadedmetadata = () => { vid.currentTime = t; vid.play(); }; }
+        else if (content.kind === 'audio') { aud.onloadedmetadata = () => { aud.currentTime = t; aud.play(); }; }
+      } else {
+        showIdle();
+      }
+      break;
+    }
+    case 'media_start': adActive = false; if (content) pauseContent(); playMedia(m.url, m.kind, 'media', m.name); break;
+    case 'media_stop': adActive = false; clearImageTimer(); if (content) { playMedia(content.url, content.kind, 'content', null); } else showIdle(); break;
   }
 }
 
 function connect() {
-  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/display');
-  ws.onmessage = (e) => {
-    const m = JSON.parse(e.data);
-    if (m.type === 'ad_start' || m.type === 'media_start') play(m.url || m.src, m.kind || 'video');
-    if (m.type === 'ad_end' || m.type === 'media_stop') { hideAll(); }
-  };
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/display');
+  ws.onmessage = (e) => { try { onMessage(JSON.parse(e.data)); } catch {} };
   ws.onclose = () => setTimeout(connect, 2000);
 }
 connect();
