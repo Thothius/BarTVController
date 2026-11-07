@@ -14,6 +14,7 @@ Requires: pip install yt-dlp imageio-ffmpeg  (ffmpeg on PATH also works)
 """
 import argparse
 import json
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -43,7 +44,7 @@ def ffmpeg_path():
 
 
 def safe_name(title):
-    return sanitize_filename("content_" + title[:100])
+    return sanitize_filename("content_" + re.sub(r"[/\\]", "_", title[:100]))
 
 
 def channel_videos(channel):
