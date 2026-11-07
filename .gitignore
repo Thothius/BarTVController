@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+config.json
+assets.json
+programs.json
+static/media/*
+!static/media/.gitkeep
+*.tmp
+*.corrupt-*.json
+vendors.json

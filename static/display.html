@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Display</title>
+<style>
+  html, body { margin:0; height:100%; background:#000; overflow:hidden; cursor:none; }
+  #media { position:fixed; inset:0; width:100%; height:100%; object-fit:contain; background:#000; display:none; }
+  #idle { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#2a2a2a; font:2vw system-ui, sans-serif; }
+  #badge { position:fixed; left:2vw; top:2vw; color:#444; font:1.2vw system-ui, sans-serif; display:none; }
+  #unlock { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; background:#000c; font:3vw system-ui, sans-serif; cursor:pointer; }
+  #clock { position:fixed; right:2vw; bottom:2vw; color:#333; font:1.4vw system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<div id="idle">BAR TV</div>
+<div id="badge"></div>
+<video id="media" playsinline></video>
+<audio id="mediaAudio" style="display:none"></audio>
+<img id="mediaImg" style="display:none;position:fixed;inset:0;width:100%;height:100%;object-fit:contain" alt="">
+<div id="clock"></div>
+<div id="unlock">Click once for sound</div>
+<script>
+const vid = document.getElementById('media');
+const aud = document.getElementById('mediaAudio');
+const img = document.getElementById('mediaImg');
+const idle = document.getElementById('idle');
+const badge = document.getElementById('badge');
+const unlock = document.getElementById('unlock');
+const clock = document.getElementById('clock');
+const urlParams = new URLSearchParams(location.search);
+const PREVIEW = urlParams.get('preview') === '1';   // dashboard preview: watch-only, no 'ended' events
+const forceMuted = PREVIEW || urlParams.get('muted') === '1';
+
+unlock.onclick = () => { unlock.remove(); vid.muted = false; aud.muted = false; };
+if (forceMuted || (navigator.userActivation && navigator.userActivation.hasBeenActive)) unlock.remove();
+vid.muted = aud.muted = forceMuted;
+setInterval(() => { clock.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }, 1000);
+
+const AUDIO_EXT = ['mp3', 'aac', 'wav', 'm4a', 'ogg', 'flac'];
+const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+const IMAGE_SECONDS = 8;
+
+let ws = null;
+function send(obj) { if (PREVIEW) return; if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+function sniffKind(url, kind) {
+  if (kind && kind !== 'video') return kind;
+  const ext = (url.split('?')[0].split('#')[0].split('.').pop() || '').toLowerCase();
+  if (AUDIO_EXT.includes(ext)) return 'audio';
+  if (IMAGE_EXT.includes(ext)) return 'image';
+  return 'video';
+}
+
+// content = the program's base layer; it survives commercials (paused + resumed).
+let content = null;      // {url, kind}
+let contentTime = 0;     // resume position for video/audio
+let adActive = false;
+let imageTimer = null;
+const seqs = {content: null, ad: null};   // echoed back so the server can ignore stale 'ended'
+const ERROR_SKIP_MS = 2000;
+
+function showIdle() {
+  vid.style.display = 'none'; aud.style.display = 'none'; img.style.display = 'none';
+  vid.pause(); aud.pause();
+  idle.style.display = 'flex';
+  badge.style.display = 'none';
+}
+function clearImageTimer() { if (imageTimer) { clearTimeout(imageTimer); imageTimer = null; } }
+
+function playMedia(url, kind, ctx, name) {
+  kind = sniffKind(url, kind || 'video');
+  clearImageTimer();
+  idle.style.display = 'none'; badge.style.display = 'block';
+  badge.textContent = ctx === 'ad' ? 'AD · ' + (name || '') : ctx === 'content' ? 'PROGRAM · ' + (name || '') : (name || '');
+  let done = false;
+  const finish = () => {
+    if (PREVIEW) {
+      // Watch-only preview: loop content locally, never report to the server.
+      if (ctx === 'content') {
+        if (kind === 'video') { vid.currentTime = 0; vid.play().catch(() => {}); }
+        else if (kind === 'audio') { aud.currentTime = 0; aud.play().catch(() => {}); }
+        else imageTimer = setTimeout(finish, IMAGE_SECONDS * 1000);
+      }
+      return;
+    }
+    if (done) return;
+    done = true;
+    if (ctx === 'content' || ctx === 'ad') send({type: 'ended', what: ctx, seq: seqs[ctx]});
+    if (ctx === 'ad') return; // server sends ad_end -> resume content
+    if (ctx === 'media') { showIdle(); }
+  };
+  // Missing/corrupt file: skip it instead of freezing on a black screen.
+  const failed = () => {
+    if (PREVIEW) return;
+    console.warn('media failed', url);
+    if (ctx === 'media') { showIdle(); return; }
+    clearImageTimer();
+    imageTimer = setTimeout(finish, ERROR_SKIP_MS);
+  };
+  vid.onended = aud.onended = vid.onerror = aud.onerror = img.onerror = null;
+  vid.onloadedmetadata = aud.onloadedmetadata = null;
+  vid.style.display = 'none'; aud.style.display = 'none'; img.style.display = 'none';
+  if (kind !== 'video') vid.pause();
+  if (kind !== 'audio') aud.pause();
+  const start = el => el.play().catch(err => {
+    if (err && err.name === 'NotAllowedError') { el.muted = true; el.play().catch(() => {}); }
+  });
+  if (kind === 'audio') {
+    aud.onended = finish; aud.onerror = failed;
+    aud.src = url; aud.style.display = 'block'; start(aud);
+  } else if (kind === 'image') {
+    img.onerror = failed;
+    img.src = url; img.style.display = 'block';
+    imageTimer = setTimeout(finish, IMAGE_SECONDS * 1000);
+  } else {
+    vid.onended = finish; vid.onerror = failed;
+    vid.src = url; vid.style.display = 'block'; vid.muted = forceMuted;
+    start(vid);
+  }
+}
+
+function resumeContent() {
+  // Pick the program's base layer back up where it was paused.
+  const t = contentTime; contentTime = 0;
+  playMedia(content.url, content.kind, 'content', content.name);
+  const el = content.kind === 'video' ? vid : content.kind === 'audio' ? aud : null;
+  if (el && t > 0) el.onloadedmetadata = () => { el.currentTime = t; el.onloadedmetadata = null; };
+}
+
+function pauseContent() {
+  if (!content) return;
+  if (content.kind === 'video') contentTime = vid.currentTime || 0;
+  else if (content.kind === 'audio') contentTime = aud.currentTime || 0;
+  vid.pause(); aud.pause();
+}
+
+function playContent(m) {
+  content = {url: m.url, kind: sniffKind(m.url, m.kind || 'video'), name: m.name};
+  seqs.content = m.seq ?? null;
+  contentTime = 0;
+  playMedia(m.url, content.kind, 'content', m.name);
+}
+
+function onMessage(m) {
+  switch (m.type) {
+    case 'content_start': adActive = false; playContent(m); break;
+    case 'content_stop': content = null; contentTime = 0; showIdle(); break;
+    case 'ad_start': {
+      adActive = true;
+      const url = m.url || m.src;
+      seqs.ad = m.seq ?? null;
+      if (content) pauseContent();
+      playMedia(url, m.kind || 'video', 'ad', m.name);
+      break;
+    }
+    case 'ad_end': {
+      adActive = false;
+      clearImageTimer();
+      if (content) resumeContent(); else showIdle();
+      break;
+    }
+    case 'media_start': adActive = false; if (content) pauseContent(); playMedia(m.url, m.kind, 'media', m.name); break;
+    case 'media_stop': adActive = false; clearImageTimer(); if (content) resumeContent(); else showIdle(); break;
+  }
+}
+
+function connect() {
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/display');
+  ws.onmessage = (e) => { try { onMessage(JSON.parse(e.data)); } catch {} };
+  ws.onclose = () => setTimeout(connect, 2000);
+}
+connect();
+</script>
+</body>
+</html>
