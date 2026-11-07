@@ -609,26 +609,21 @@ function updateSession() {
   const sig = JSON.stringify([ap && ap.id, eng.mode, eng.item, s.ad_running, s.next_ad, S.programs.map(p => p.id + (p.active ? '*' : '')).join(',')]);
   if (np.dataset.sig === sig) return;
   np.dataset.sig = sig;
-  const modeText = s.ad_running ? 'Ad break playing' : eng.mode === 'content' ? 'Playing program content' : (s.paired ? 'Showing TV input' : 'Idle - pair a TV in Settings');
-  const itemText = eng.item ? `Now: ${eng.item}` + (eng.count ? ` (clip ${(eng.index ?? 0) + 1} of ${eng.count})` : '') : '';
+  const modeText = s.ad_running ? 'Ad break' : eng.mode === 'content' ? 'Playing content' : (s.paired ? 'TV input' : 'Idle');
+  const itemText = eng.item ? ` · clip ${(eng.index ?? 0) + 1} of ${eng.count}` : '';
   np.innerHTML = `
-    <div class="label">Now running</div>
-    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
-      <div style="font-size:22px;font-weight:700">${ap ? esc(ap.name) : 'No program'}</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:16px;font-weight:700">${ap ? esc(ap.name) : 'No program'}</span>
       ${ap ? `<span class="muted small">${esc(progSummary(ap))}</span>` : ''}
       <div style="flex:1"></div>
-      <a class="btn sm" href="#/programs" style="text-decoration:none">Manage programs</a>
+      <a class="btn sm ghost" href="#/programs" style="text-decoration:none">Manage</a>
     </div>
-    <div class="muted" style="margin-top:8px">${esc(modeText)}${itemText ? ' · ' + esc(itemText) : ''} · Next ad ${s.scheduler_enabled && s.next_ad ? fmtTime(s.next_ad) : 'paused'}</div>
-    <div class="sep"></div>
-    <div class="label">Switch program</div>
-    <div class="row" style="gap:10px;align-items:center;margin-top:8px">
-      <select class="field" id="progPick" style="flex:1;min-width:0">${S.programs.map(p => `<option value="${esc(p.id)}" ${p.active ? 'selected' : ''}>${esc(p.name)} — ${esc(progSummary(p))}</option>`).join('')}</select>
-      <button class="btn" id="progSet" type="button">Set active</button>
+    <div class="muted small" style="margin-top:4px">${esc(modeText)}${itemText}${s.scheduler_enabled && s.next_ad ? ' · next ad ' + fmtTime(s.next_ad) : ''}</div>
+    <div class="row" style="margin-top:8px">
+      <select class="field" id="progPick" style="flex:1;min-width:0;height:34px">${S.programs.map(p => `<option value="${esc(p.id)}" ${p.active ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
     </div>`;
-  $('#progSet').onclick = async () => {
-    const id = $('#progPick').value;
-    const r = await act(() => api('POST', '/api/programs/active', {id}), 'Program activated');
+  $('#progPick').onchange = async e => {
+    const r = await act(() => api('POST', '/api/programs/active', {id: e.target.value}), 'Program switched');
     if (r) { await loadPrograms(); await loadStatus(); }
   };
 }
