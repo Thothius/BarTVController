@@ -1108,12 +1108,86 @@ function renderSettings() {
         <div><h1>Settings</h1><div class="sub">TV connection, ad schedule and this device</div></div>
       </div>
       <div class="settings" id="settingsRoot">
-        <div class="col"><div class="panel tvhero" id="tvHero"></div><div class="panel panel-pad" id="tvList"></div></div>
+        <div class="col"><div class="panel tvhero" id="tvHero"></div><div class="panel panel-pad" id="tvList"></div><div class="panel panel-pad" id="tvGuide"></div><div class="panel panel-pad" id="netDiag"></div></div>
         <div class="col" id="sideCol"></div>
       </div>`;
   }
   if (!s) { $('#tvHero').innerHTML = `<div class="err-box">Server unreachable.</div>`; return; }
-  renderTvHero(); renderTvList(); renderSide();
+  renderTvHero(); renderTvList(); renderSide(); renderTvGuide(); renderNetDiag();
+}
+function renderNetDiag() {
+  const el = $('#netDiag'), r = S.net;
+  if (!el) return;
+  if (S.netOpen && el.contains(document.activeElement)) { /* keep scroll/focus */ }
+  const ports = d => d.webos_ports && (d.webos_ports['3000'] || d.webos_ports['3001']) ? '<span class="pill ok">webOS ports open</span>' : '';
+  const wifi = r?.wifi;
+  el.innerHTML = `
+    <div class="section-head"><span class="label">Network diagnostics</span>
+      <button class="btn sm" id="netScanBtn" ${S.netScanning ? 'disabled' : ''}>${I.search} ${S.netScanning ? 'Scanning… (~15 s)' : r ? 'Scan again' : 'Scan network'}</button></div>
+    ${!r ? '<div class="muted small">Shows this laptop\'s Wi-Fi, nearby networks, devices on the network (with maker), any LG TV, and Bluetooth devices. Only the webOS ports of already-visible devices are tested.</div>' : `
+    <div style="display:grid;gap:14px">
+      ${r.lg_tvs.length ? `<div class="kv small" style="color:var(--ok)"><b>LG TV found:</b><span>${r.lg_tvs.map(d => `${esc(d.ip)}${d.ssdp?.name ? ' (' + esc(d.ssdp.name) + ')' : ''} <button class="btn sm primary" data-netuse="${esc(d.ip)}">Use</button>`).join(' ')}</span></div>`
+        : `<div class="warn-box">No LG TV visible from this network.${r.isolation_suspected ? ' Devices are listed but none answered discovery - this Wi-Fi isolates clients (guest network). Join the network the TV uses, or the laptop hotspot.' : ''}</div>`}
+      <div><div class="label" style="margin-bottom:6px">This laptop</div>
+        <div class="kv small"><span class="muted">Wi-Fi</span><span>${esc(wifi?.connected?.ssid || (wifi?.supported === false ? 'n/a' : 'not connected'))} ${wifi?.connected?.signal ? '· ' + esc(wifi.connected.signal) : ''} ${wifi?.connected?.band ? '· ' + esc(wifi.connected.band) : ''}</span></div>
+        <div class="kv small"><span class="muted">IP</span><span>${esc(r.laptop_ip || '?')}${r.tv_ip ? ` · TV ${esc(r.tv_ip)} ${r.tv_ip_in_range ? '(same range)' : '<b style="color:var(--warn)">(different range)</b>'}` : ''}</span></div>
+        <div class="kv small"><span class="muted">Discovery replies</span><span>${r.multicast_answers} · scan took ${r.seconds}s</span></div></div>
+      ${wifi?.networks?.length ? `<div><div class="label" style="margin-bottom:6px">Wi-Fi networks in range (${wifi.networks.length})</div><div class="rows">
+        ${wifi.networks.map(n => `<div class="kv small"><span>${esc(n.ssid)}${n.ssid === wifi.connected?.ssid ? ' <span class="pill acc">connected</span>' : ''}</span><span class="muted">${n.signal}% · ${esc(n.auth)}${n.bssids > 1 ? ' · ' + n.bssids + ' APs' : ''}</span></div>`).join('')}</div></div>` : ''}
+      <div><div class="label" style="margin-bottom:6px">Devices on this network (${r.devices.length})</div><div class="rows">
+        ${r.devices.length ? r.devices.map(d => `<div class="kv small"><span><b>${esc(d.ip)}</b>${d.is_tv_ip ? ' <span class="pill acc">configured TV</span>' : ''} ${ports(d)}${d.lg_tv ? ' <span class="pill ok">LG</span>' : ''}</span>
+          <span class="muted" style="text-align:right">${esc(d.ssdp?.name || '')}${d.ssdp?.name ? ' · ' : ''}${esc(d.vendor || 'unknown maker')}${d.mac ? ' · ' + esc(d.mac) : ''}</span></div>`).join('') : '<div class="muted small">None seen.</div>'}</div></div>
+      <div><div class="label" style="margin-bottom:6px">Bluetooth</div><div class="rows">
+        ${(r.bluetooth.paired || []).map(b => `<div class="kv small"><span>${esc(b.name)} <span class="pill">paired</span></span><span class="muted">${esc(b.address)}${b.connected ? ' · connected' : ''}</span></div>`).join('')}
+        ${r.bluetooth.nearby?.supported ? (r.bluetooth.nearby.devices.length ? r.bluetooth.nearby.devices.slice(0, 40).map(b => `<div class="kv small"><span>${esc(b.name || '(no name)')}${b.lg ? ' <span class="pill ok">LG</span>' : ''}</span><span class="muted">${esc(b.address)} · ${b.rssi ?? '?'} dBm</span></div>`).join('') : '<div class="muted small">No Bluetooth LE devices nearby.</div>')
+          : `<div class="muted small">${esc(r.bluetooth.nearby?.note || '')}</div>`}
+      </div></div>
+    </div>`}`;
+  $('#netScanBtn').onclick = async () => {
+    S.netScanning = true; renderNetDiag();
+    try { S.net = await api('GET', '/api/network/scan'); } catch (e) { toast('Scan failed: ' + e.message); }
+    S.netScanning = false; renderNetDiag();
+  };
+  el.querySelectorAll('[data-netuse]').forEach(b => b.onclick = () => selectTv(b.dataset.netuse, 'LG TV'));
+}
+function renderTvGuide() {
+  const s = S.status, el = $('#tvGuide');
+  const c = S.tvCheck && S.tvCheck.tv_ip === s.tv_ip && S.tvCheck.mock_tv === s.mock_tv ? S.tvCheck : null;  // stale after switching TV
+  if (!el) return;
+  const inputsOk = s.tv_inputs?.length ? [s.normal_input, s.signage_input].every(i => s.tv_inputs.includes(i)) : null;
+  const sameNet = c && c.laptop_ip && !s.mock_tv ? c.laptop_ip.split('.').slice(0, 3).join('.') === String(c.tv_ip).split('.').slice(0, 3).join('.') : null;
+  // state: true = done, false = problem, null = not checked yet
+  const steps = [
+    ['Same Wi-Fi as the TV', 'On the TV: Settings → General → Network → Wi-Fi Connection shows its network and IP. Put this laptop on that network. Guest Wi-Fi (e.g. "Drink") hides devices from each other - use the staff network or this laptop\'s Mobile Hotspot.',
+      s.mock_tv ? null : (c ? (c.reachable ? true : sameNet === false ? false : null) : null)],
+    ['Allow control on the TV', 'TV settings: turn on "LG Connect Apps" / "Mobile TV On" (name depends on the model). Best: reserve the TV\'s IP on the router so it never changes.', s.mock_tv ? null : (c ? c.reachable : null)],
+    ['Turn Mock mode off and enter the TV\'s IP', 'Mock mode switch is on the right; add or select the TV in the list above.', s.mock_tv ? false : true],
+    ['Check TV', 'Press Check TV below - it must say "reachable". If not: TV off, wrong IP, or a different / isolated network.', s.mock_tv ? null : (c ? c.reachable : null)],
+    ['Pair', 'Press Pair this TV, then Allow on the TV remote within 60 seconds.', s.paired && !s.mock_tv ? true : null],
+    ['Inputs match', `Live TV = ${s.normal_input}, laptop = ${s.signage_input}. The TV reports: ${s.tv_inputs?.length ? s.tv_inputs.join(', ') : 'unknown until paired'}. Fix in config.json if they differ.`, s.mock_tv ? null : inputsOk],
+    ['Start the screen', 'Laptop HDMI → TV input ' + s.signage_input + ', then run kiosk.bat (kiosk.bat 1920 if the TV is a second screen). ' + s.displays_connected + ' screen' + (s.displays_connected === 1 ? '' : 's') + ' connected now.', s.displays_connected > 0 ? true : null],
+    ['Test an ad break', 'Press Ad break: the TV switches to the laptop, plays the ad and switches back.', null],
+  ];
+  const mark = st => st === true ? '<span class="pill ok">✓</span>' : st === false ? '<span class="pill" style="color:var(--err)">!</span>' : '<span class="pill">·</span>';
+  el.innerHTML = `
+    <div class="section-head"><span class="label">Connect a real TV</span>
+      <button class="btn sm" id="tvCheckBtn" ${S.tvChecking || s.mock_tv ? 'disabled' : ''}>${S.tvChecking ? 'Checking…' : 'Check TV'}</button></div>
+    ${s.mock_tv ? '<div class="muted small" style="margin-bottom:8px">Mock mode is on - nothing below talks to a real TV yet.</div>' : ''}
+    ${c && !s.mock_tv ? `<div class="${c.reachable ? 'muted' : 'err-box'} small" style="margin-bottom:8px">
+        TV ${esc(c.tv_ip)}: ${c.reachable ? '<b style="color:var(--ok)">reachable</b>' : '<b>not reachable</b>'}
+        (port 3000 ${c.ports['3000'] ? 'open' : 'closed'}, 3001 ${c.ports['3001'] ? 'open' : 'closed'}) · laptop ${esc(c.laptop_ip || '?')}
+        ${sameNet === false ? ' · <b>different network range - the laptop and TV are not on the same Wi-Fi</b>' : ''}
+        · ${c.paired ? 'paired' : 'not paired'}${c.connected ? ', connected' : ''}</div>` : ''}
+    <div class="rows" style="gap:10px">
+      ${steps.map(([t, d, st], i) => `<div style="display:flex;gap:10px;align-items:flex-start">${mark(st)}
+        <div style="min-width:0"><div><b>${i + 1}. ${esc(t)}</b></div><div class="muted small">${esc(d)}</div></div></div>`).join('')}
+    </div>`;
+  const b = $('#tvCheckBtn');
+  if (b) b.onclick = async () => {
+    S.tvChecking = true; renderTvGuide();
+    try { S.tvCheck = await (await fetch('/api/tv/check')).json(); } catch { S.tvCheck = null; toast('Check failed - server unreachable'); }
+    S.tvChecking = false; renderTvGuide();
+  };
 }
 function renderTvHero() {
   const s = S.status, el = $('#tvHero');

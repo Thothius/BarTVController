@@ -350,7 +350,19 @@ class TVSettings(BaseModel):
 @app.get("/api/tv/discover")
 async def tv_discover():
     """SSDP search for LG webOS TVs on the local network (~3s)."""
-    return {"tvs": await discover_tvs()}
+    from . import netdiag
+    my_ip = netdiag.local_ip(cfg.tv_ip or "8.8.8.8")
+    found = await asyncio.get_running_loop().run_in_executor(None, netdiag.ssdp, my_ip, 3.0)
+    tvs = [{"ip": ip, "name": d.get("name") or "LG webOS TV"} for ip, d in found.items()
+           if netdiag.is_lg(d.get("server", ""), " ".join(d.get("types", [])), d.get("maker", ""), d.get("name", ""))]
+    return {"tvs": tvs or await discover_tvs()}
+
+
+@app.get("/api/network/scan", dependencies=[Depends(require_pin)])
+async def network_scan():
+    """Venue network diagnostics: Wi-Fi, LAN devices (+vendor), SSDP/mDNS, LG TVs, Bluetooth (~10-20s)."""
+    from . import netdiag
+    return await netdiag.scan(None if cfg.mock_tv else cfg.tv_ip, CONFIG_PATH.parent / "vendors.json")
 
 
 @app.post("/api/tv", dependencies=[Depends(require_pin)])
@@ -381,12 +393,24 @@ async def tv_settings(req: TVSettings):
     return await status()
 
 
+def _lan_ip() -> Optional[str]:
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect((cfg.tv_ip or "10.255.255.255", 1))  # picks the interface that routes to the TV
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
 @app.get("/api/tv/check")
 async def tv_check():
     """Reachability of the configured TV's control ports - first thing to look at on a new network."""
     from .tv import probe
     ports = {} if cfg.mock_tv else await probe(cfg.tv_ip)
-    return {"tv_ip": cfg.tv_ip, "mock_tv": cfg.mock_tv, "ports": ports,
+    return {"tv_ip": cfg.tv_ip, "mock_tv": cfg.mock_tv, "ports": ports, "laptop_ip": _lan_ip(),
             "reachable": True if cfg.mock_tv else any(ports.values()),
             "paired": bool(cfg.client_key), "connected": bool(tv.client and tv.client.is_connected()),
             "tv_inputs": tv.last_inputs}

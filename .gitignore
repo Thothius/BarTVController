@@ -9,3 +9,4 @@ static/media/*
 !static/media/.gitkeep
 *.tmp
 *.corrupt-*.json
+vendors.json

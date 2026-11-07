@@ -238,3 +238,31 @@ def test_real_tv_unreachable_gives_clear_errors(app_env):
             break
         time.sleep(0.1)
     assert "Can't reach the TV at 127.0.0.1" in st["error"]
+
+
+def test_netdiag_parsers():
+    from bartv import netdiag
+    nets = netdiag.parse_netsh_networks(
+        "SSID 1 : Drink\n    Authentication          : WPA2-Personal\n    BSSID 1                 : f6:9f\n"
+        "         Signal             : 90%  \n    BSSID 2                 : f6:9e\n         Signal             : 85%\n"
+        "SSID 2 : \n    Authentication          : WPA2-Personal\n    BSSID 1 : aa\n         Signal             : 40%\n")
+    assert nets[0] == {"ssid": "Drink", "auth": "WPA2-Personal", "signal": 90, "bssids": 2}
+    assert nets[1]["ssid"] == "(hidden)"
+    arp = ("Interface: 192.168.1.130 --- 0xd\n  192.168.1.1           34-e3-80-9f-65-70     dynamic\n"
+           "  192.168.1.255         ff-ff-ff-ff-ff-ff     static\n  224.0.0.22            01-00-5e-00-00-16     static\n"
+           "  26.0.0.1              02-00-00-00-51-00     dynamic\n")
+    assert netdiag.parse_arp(arp, "192.168.1.130") == [{"ip": "192.168.1.1", "mac": "34:E3:80:9F:65:70"}]
+    v = netdiag.VendorLookup(Path("/nonexistent/vendors.json"))
+    assert v.lookup("34:E3:80:9F:65:70", online=False).startswith("Genexis")
+    assert "random" in v.lookup("DA:11:22:33:44:55", online=False)
+    assert netdiag.is_lg("Linux/4.4 UPnP/1.0 webOS/1.5") and not netdiag.is_lg("Hikvision")
+
+
+def test_network_scan_endpoint(app_env, monkeypatch):
+    client, main, _ = app_env
+    from bartv import netdiag
+    async def fake_scan(tv_ip, cache):
+        return {"devices": [], "lg_tvs": []}
+    monkeypatch.setattr(netdiag, "scan", fake_scan)
+    assert client.get("/api/network/scan").status_code == 401
+    assert client.get("/api/network/scan", headers=H).json() == {"devices": [], "lg_tvs": []}
