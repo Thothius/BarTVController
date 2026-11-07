@@ -147,6 +147,32 @@ def test_pool_ad_no_immediate_repeat_and_legacy_fallback(tmp_path):
     asyncio.run(run())
 
 
+def test_content_pauses_during_ad(tmp_path):
+    async def run():
+        engine, tv, hub, programs = make_engine(tmp_path)
+        p = programs.create("P", ["c1.mp4", "c2.mp4"], ["ad1.mp4"], base="content", ads_per_hour=0)
+        engine.cfg.active_program = p["id"]
+        await engine.apply_program()
+        await wait_sent(hub, "content_start")
+        assert engine.play_ad("manual")
+        await wait_sent(hub, "ad_start")
+        # Content 'ends' during the commercial -> playlist must NOT advance yet.
+        engine.notify_ended("content")
+        await asyncio.sleep(0.3)
+        starts = [e for e in hub.sent if e["type"] == "content_start"]
+        assert len(starts) == 1
+        # Commercial ends -> playlist resumes with the next clip.
+        engine.notify_ended("ad")
+        for _ in range(100):
+            if len([e for e in hub.sent if e["type"] == "content_start"]) > 1:
+                break
+            await asyncio.sleep(0.02)
+        starts = [e for e in hub.sent if e["type"] == "content_start"]
+        assert starts[-1]["url"] == "/media/c2.mp4"
+        await engine.shutdown()
+    asyncio.run(run())
+
+
 def test_tick_cadence_program_vs_legacy(tmp_path):
     async def run():
         engine, tv, hub, programs = make_engine(tmp_path)

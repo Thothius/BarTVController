@@ -184,3 +184,12 @@ Programs + ad pool. Semantics agreed with Ted:
   state chip (TV input / Program · name / AD break). Kiosk page gained
   ?muted=1&preview=1 params: preview mode never reports 'ended' events
   and loops content locally, so it cannot double-advance the playlist.
+- 2026-11-07 (polish pass) — Edge-case sweep: fixed content playlist
+  advancing during a commercial (engine now waits for the ad to finish
+  before broadcasting the next content_start; regression test added).
+  Docs: docs/DEMO.md (laptop mock-mode demo script) and
+  docs/RUNBOOK.md (bar deployment: setup, HDMI 2 kiosk, pairing, daily
+  ops, autostart, troubleshooting). 22 tests pass. PIN on laptop demo
+  set to 0000 (local config). NEXT: Ted human-tests the demo, then
+  Phase 2 leftovers (multi-display guard documented) and Phase 3
+  YouTube import polish.

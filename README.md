@@ -32,6 +32,9 @@ start.bat      :: starts server + opens http://localhost:8000/
 
 Python 3.10+ must be installed (tick "Add python.exe to PATH" in the installer). On the phone, open `http://<terminal-pc-ip>:8000/` on the venue Wi-Fi.
 
+- **[docs/DEMO.md](docs/DEMO.md)** — laptop mock-mode demo script (LGTestTV).
+- **[docs/RUNBOOK.md](docs/RUNBOOK.md)** — bar deployment runbook (setup, kiosk, pairing, troubleshooting).
+
 ## Pairing (the handshake)
 
 The first time — and again whenever the TV forgets the app (e.g. after a firmware update, which shows "An unknown application requested access"):

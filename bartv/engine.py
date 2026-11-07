@@ -141,6 +141,9 @@ class ProgramEngine:
                     log.warning("Content loop: TV not ready, retrying in 10s", exc_info=True)
                     await asyncio.sleep(10)
             while True:
+                # Never advance the playlist while a commercial break owns the screen.
+                while self.ad_running:
+                    await asyncio.sleep(0.5)
                 p = self.active_program()
                 files = self._existing(p["content"]) if p and p["base"] == "content" else []
                 if not files:
