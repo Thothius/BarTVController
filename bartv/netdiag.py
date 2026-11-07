@@ -320,3 +320,23 @@ async def scan(tv_ip: Optional[str], vendor_cache: Path) -> dict:
         "tv_ip_in_range": bool(my_ip and tv_ip and my_ip.rsplit(".", 1)[0] == tv_ip.rsplit(".", 1)[0]),
         "bluetooth": bt, "seconds": round(time.time() - t0, 1),
     }
+
+
+async def find_tvs(my_ip: Optional[str]) -> dict:
+    """LG TVs via SSDP, plus a webOS-port knock on visible neighbours (TVs that ignore SSDP),
+    plus a Bluetooth LE look so a TV on another / isolated network is still reported as nearby."""
+    loop = asyncio.get_running_loop()
+    ssdp_f = loop.run_in_executor(None, ssdp, my_ip, 3.0)
+    bt_f = asyncio.create_task(bluetooth_nearby(4.0))
+    neigh = await loop.run_in_executor(None, neighbours, my_ip)
+    probes = await asyncio.gather(*(probe(d["ip"], timeout=1.0) for d in neigh))
+    found = await ssdp_f
+    tvs = {ip: {"ip": ip, "name": d.get("name") or "LG webOS TV"} for ip, d in found.items()
+           if is_lg(d.get("server", ""), " ".join(d.get("types", [])), d.get("maker", ""), d.get("name", ""))}
+    for d, ports in zip(neigh, probes):
+        if any(ports.values()) and d["ip"] not in tvs:
+            tvs[d["ip"]] = {"ip": d["ip"], "name": "webOS TV (control port open)"}
+    bt = await bt_f
+    bt_tvs = [{"name": b["name"].replace("[LG] ", ""), "rssi": b["rssi"]} for b in bt.get("devices", []) if b["lg"]]
+    return {"tvs": list(tvs.values()), "bluetooth_tvs": bt_tvs,
+            "isolated": bool(neigh) and not found and not tvs}

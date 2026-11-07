@@ -16,7 +16,7 @@ from .ads import DisplayHub
 from .config import CONFIG_PATH, ROOT, load_config, save_config
 from .engine import ProgramEngine
 from .library import MAX_UPLOAD_BYTES, AssetStore, ProgramStore
-from .tv import TVController, discover_tvs
+from .tv import TVController
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("bartv")
@@ -352,10 +352,7 @@ async def tv_discover():
     """SSDP search for LG webOS TVs on the local network (~3s)."""
     from . import netdiag
     my_ip = netdiag.local_ip(cfg.tv_ip or "8.8.8.8")
-    found = await asyncio.get_running_loop().run_in_executor(None, netdiag.ssdp, my_ip, 3.0)
-    tvs = [{"ip": ip, "name": d.get("name") or "LG webOS TV"} for ip, d in found.items()
-           if netdiag.is_lg(d.get("server", ""), " ".join(d.get("types", [])), d.get("maker", ""), d.get("name", ""))]
-    return {"tvs": tvs or await discover_tvs()}
+    return await netdiag.find_tvs(my_ip)
 
 
 @app.get("/api/network/scan", dependencies=[Depends(require_pin)])

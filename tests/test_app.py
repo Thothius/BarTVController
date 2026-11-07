@@ -266,3 +266,16 @@ def test_network_scan_endpoint(app_env, monkeypatch):
     monkeypatch.setattr(netdiag, "scan", fake_scan)
     assert client.get("/api/network/scan").status_code == 401
     assert client.get("/api/network/scan", headers=H).json() == {"devices": [], "lg_tvs": []}
+
+
+def test_discover_reports_bluetooth_tv(app_env, monkeypatch):
+    client, main, _ = app_env
+    from bartv import netdiag
+    monkeypatch.setattr(netdiag, "ssdp", lambda ip, s=0: {})
+    monkeypatch.setattr(netdiag, "neighbours", lambda ip: [{"ip": "192.168.1.1", "mac": "34:E3:80:00:00:00"}])
+    async def no_ports(ip, timeout=1.5): return {"3000": False, "3001": False}
+    async def bt(seconds=5): return {"supported": True, "devices": [{"name": "[LG] webOS TV UQ81", "rssi": -80, "lg": True, "address": "x"}]}
+    monkeypatch.setattr(netdiag, "probe", no_ports)
+    monkeypatch.setattr(netdiag, "bluetooth_nearby", bt)
+    r = client.get("/api/tv/discover").json()
+    assert r == {"tvs": [], "bluetooth_tvs": [{"name": "webOS TV UQ81", "rssi": -80}], "isolated": True}

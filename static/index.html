@@ -121,6 +121,11 @@
   .vol-row svg { width: 18px; height: 18px; flex: none; }
   .vol-row output { width: 30px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
   .sep { height: 1px; background: var(--line); margin: 0 -20px; }
+  .qpanel { display:grid; gap:0; padding-top:12px; padding-bottom:6px; }
+  .qpanel .label { margin-bottom:4px; }
+  .qrow { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0; border-top:1px solid var(--line, #262a33); }
+  .qrow .t { font-size:13px; font-weight:600; }
+  .qrow .small { font-size:11.5px; }
   .kv { display:flex; justify-content: space-between; gap: 10px; }
   .warn-box { padding: 10px 12px; border-radius: 10px; background: rgba(251,191,36,.08); border:1px solid rgba(251,191,36,.25); color: #f5d27a; font-size: 13px; }
   .err-box { padding: 10px 12px; border-radius: 10px; background: rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.25); color: #fca5a5; font-size: 13px; }
@@ -1273,6 +1278,7 @@ function renderTvList() {
       ${disc.length ? `<div class="rows" style="gap:8px">${disc.map(t => `
         <div class="tvrow"><div><div class="nm">${esc(t.name)}</div><div class="ip">${esc(t.ip)}</div></div>
           <button class="btn sm primary" data-use="${esc(t.ip)}" data-name="${esc(t.name)}">Use this TV</button></div>`).join('')}</div>`
+        : S.btTvs?.length ? `<div class="warn-box"><b>${S.btTvs.map(t => esc(t.name)).join(', ')}</b> is nearby (seen over Bluetooth) but not reachable on this Wi-Fi${S.discIsolated ? ', which keeps devices apart (guest network)' : ''}. On the TV open Settings → General → Network → Wi-Fi Connection, put this laptop on the same network (or the TV on this laptop's Mobile Hotspot), then search again or add the TV by IP below.</div>`
         : `<div class="warn-box">No LG TVs answered. Make sure the TV is on and on the same Wi-Fi as this computer. Guest networks often block devices from seeing each other - add the TV by IP below (TV: Settings → General → Network → Wi-Fi → Advanced).</div>`}
     </div>` : ''}
     <div style="margin-top:16px">
@@ -1285,7 +1291,7 @@ function renderTvList() {
     </div>`;
   $('#scanBtn').onclick = async () => {
     S.scanning = true; renderTvList();
-    try { S.discovered = (await (await fetch('/api/tv/discover')).json()).tvs; } catch { S.discovered = []; }
+    try { const r = await (await fetch('/api/tv/discover')).json(); S.discovered = r.tvs; S.btTvs = r.bluetooth_tvs || []; S.discIsolated = r.isolated; } catch { S.discovered = []; S.btTvs = []; }
     S.scanning = false; renderTvList();
   };
   el.querySelectorAll('[data-use]').forEach(b => b.onclick = () => selectTv(b.dataset.use, b.dataset.name));
@@ -1315,28 +1321,15 @@ function renderSide() {
   const s = S.status, el = $('#sideCol');
   if (el.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.type !== 'checkbox') return;
   const kiosk = `${location.origin}/display`;
+  const row = (t, sub, ctl) => `<div class="qrow"><div class="txt"><div class="t">${t}</div>${sub ? `<div class="muted small">${sub}</div>` : ''}</div>${ctl}</div>`;
   el.innerHTML = `
-    <div class="panel panel-pad" style="display:grid;gap:16px">
-      <div class="label">Mode</div>
-      <div class="setrow"><div class="txt"><div class="t">Mock mode</div><div class="muted small">Simulated LGTestTV - test everything without the real TV. Switching modes drops the current pairing.</div></div>
-        <label class="switch"><input type="checkbox" id="mockSw" ${s.mock_tv ? 'checked' : ''} ${s.pairing ? 'disabled' : ''}><span></span></label></div>
-    </div>
-    <div class="panel panel-pad" style="display:grid;gap:16px">
-      <div class="label">Ad schedule</div>
-      <div class="setrow"><div class="txt"><div class="t">Auto ad breaks</div><div class="muted small">Every ${s.ad_interval_minutes} min · next ${s.scheduler_enabled ? fmtTime(s.next_ad) : 'paused'}</div></div>
-        <label class="switch"><input type="checkbox" id="schedSw2" ${s.scheduler_enabled ? 'checked' : ''}><span></span></label></div>
-      <div class="kv small"><span class="muted">Inputs</span><span>Live ${esc(s.normal_input)} · Signage ${esc(s.signage_input)}</span></div>
-    </div>
-    <div class="panel panel-pad" style="display:grid;gap:12px">
-      <div class="label">Signage screen (HDMI 2)</div>
-      <div class="muted small">Open this page fullscreen on the computer plugged into the TV's signage input. ${s.displays_connected} screen${s.displays_connected === 1 ? '' : 's'} connected.</div>
-      <code class="box">${esc(kiosk)}</code>
-      <div style="display:flex;gap:8px"><a class="btn sm" href="/display" target="_blank">Open screen</a><button class="btn sm" id="copyKiosk">Copy kiosk command</button></div>
-    </div>
-    <div class="panel panel-pad" style="display:grid;gap:12px">
-      <div class="label">This device</div>
-      <div class="setrow"><div class="txt"><div class="t">Saved PIN</div><div class="muted small">${pin ? 'This browser remembers the PIN' : 'No PIN saved'}</div></div>
-        <button class="btn sm" id="forgetPin" ${pin ? '' : 'disabled'}>Forget PIN</button></div>
+    <div class="panel panel-pad qpanel">
+      <div class="label">Quick settings</div>
+      ${row('Mock mode', 'Simulated TV · switching drops the pairing', `<label class="switch"><input type="checkbox" id="mockSw" ${s.mock_tv ? 'checked' : ''} ${s.pairing ? 'disabled' : ''}><span></span></label>`)}
+      ${row('Auto ad breaks', `Every ${s.ad_interval_minutes} min · next ${s.scheduler_enabled ? fmtTime(s.next_ad) : 'paused'}`, `<label class="switch"><input type="checkbox" id="schedSw2" ${s.scheduler_enabled ? 'checked' : ''}><span></span></label>`)}
+      ${row('Inputs', `Live ${esc(s.normal_input)} · Signage ${esc(s.signage_input)}`, '')}
+      ${row('Signage screen', `${s.displays_connected} connected · run kiosk.bat on the TV laptop`, `<span style="display:flex;gap:6px"><a class="btn sm" href="/display" target="_blank">Open</a><button class="btn sm" id="copyKiosk" title="${esc(kiosk)}">Copy URL</button></span>`)}
+      ${row('Saved PIN', pin ? 'Remembered in this browser' : 'Not saved', `<button class="btn sm" id="forgetPin" ${pin ? '' : 'disabled'}>Forget</button>`)}
     </div>`;
   $('#mockSw').onchange = async e => {
     const r = await act(() => api('POST', '/api/tv', {mock_tv: e.target.checked}), e.target.checked ? 'Mock mode on (LGTestTV)' : 'Mock mode off');
@@ -1344,8 +1337,7 @@ function renderSide() {
   };
   $('#schedSw2').onchange = e => act(() => api('POST', '/api/scheduler', {enabled: e.target.checked}), e.target.checked ? 'Auto ads on' : 'Auto ads paused').then(loadStatus);
   $('#copyKiosk').onclick = () => {
-    const cmd = `start "" chrome --kiosk --autoplay-policy=no-user-gesture-required ${kiosk}`;
-    navigator.clipboard?.writeText(cmd).then(() => toast('Copied', 'ok'), () => prompt('Copy:', cmd));
+    navigator.clipboard?.writeText(kiosk).then(() => toast('Copied', 'ok'), () => prompt('Copy:', kiosk));
   };
   $('#forgetPin').onclick = () => { pin = ''; localStorage.removeItem('bartv_pin'); toast('PIN forgotten on this browser', 'ok'); renderSide(); };
 }
