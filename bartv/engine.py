@@ -143,6 +143,8 @@ class ProgramEngine:
 
     async def _content_loop(self):
         idx = 0
+        bag: list[str] = []
+        pos = 0
         try:
             # Our playlist owns the signage input while it runs (ads share it).
             while True:
@@ -162,19 +164,31 @@ class ProgramEngine:
                 files = self._existing(p["content"]) if p and p["base"] == "content" else []
                 if not files:
                     self.state.update(mode="idle", program=None, index=0, count=0, item=None)
+                    bag, pos = [], 0
                     await asyncio.sleep(5)
                     continue
-                f = files[idx % len(files)]
-                idx += 1
+                if p.get("shuffle"):
+                    # Randomized cycle: every clip plays once before the bag reshuffles.
+                    if not bag or pos >= len(bag) or set(bag) != set(files):
+                        bag = files[:]
+                        random.shuffle(bag)
+                        pos = 0
+                    f = bag[pos]
+                    pos += 1
+                    shown, count = pos - 1, len(bag)
+                else:
+                    f = files[idx % len(files)]
+                    idx += 1
+                    shown, count = (idx - 1) % len(files), len(files)
                 a = self._asset(f)
                 url = "/media/" + f
                 kind = (a or {}).get("kind") or "video"
                 name = (a or {}).get("name") or f
-                self.state.update(mode="content", program=p["id"], index=(idx - 1) % len(files),
-                                  count=len(files), item=f)
+                self.state.update(mode="content", program=p["id"], index=shown,
+                                  count=count, item=f)
                 self._event("content").clear()
                 event = {"type": "content_start", "url": url, "kind": kind, "name": name,
-                         "index": (idx - 1) % len(files), "count": len(files),
+                         "index": shown, "count": count,
                          "seq": self._next_seq("content")}
                 self._last_content_event = event
                 await self.hub.broadcast(event)
@@ -206,6 +220,13 @@ class ProgramEngine:
                 pass
             if not self.ad_running:
                 waited += step
+
+    def skip_content(self) -> bool:
+        """Advance the playlist to the next clip immediately. False when nothing is playing."""
+        if self.state.get("mode") != "content" or not self.content_running:
+            return False
+        self.notify_ended("content")
+        return True
 
     def _item_timeout(self, asset: Optional[dict]) -> float:
         d = (asset or {}).get("duration")

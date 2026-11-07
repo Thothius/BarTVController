@@ -224,6 +224,8 @@
   .setrow { display:flex; align-items:center; gap: 14px; }
   .setrow .txt { flex: 1; }
   .setrow .t { font-weight: 600; }
+  .check { display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:600; }
+  .check input { width:16px; height:16px; accent-color: var(--accent); }
   code.box { display:block; padding: 10px 12px; border-radius: 8px; background: #0a0b0e; border:1px solid var(--line); font-size: 12px; color: #c9cdd6; word-break: break-all; }
 
   /* ---------- modal / toast ---------- */
@@ -571,7 +573,7 @@ function renderHomeTiles() {
 function progSummary(p) {
   const base = p.base === 'tv' ? 'TV' : `${p.content.length} clip${p.content.length === 1 ? '' : 's'}`;
   const rate = (p.ads_per_hour ?? 3) > 0 ? `${p.ads_per_hour ?? 3}/hr` : 'ads off';
-  return `${base} + ${p.commercials.length} ad${p.commercials.length === 1 ? '' : 's'} · ${rate}${p.active ? ' · ACTIVE' : ''}`;
+  return `${base} + ${p.commercials.length} ad${p.commercials.length === 1 ? '' : 's'} · ${rate}${p.shuffle ? ' · shuffle' : ''}${p.active ? ' · ACTIVE' : ''}`;
 }
 /* ================= SESSION (home: now playing) ================= */
 function renderSession() {
@@ -633,36 +635,44 @@ function renderControlPanel() {
   if (el.dataset.ready) { updateControlPanel(); return; }
   el.dataset.ready = '1';
   el.innerHTML = `
-    <div class="label">Live control</div>
+    <div class="label">Playback</div>
     <button class="btn primary lg" id="adBtn">${I.ad} Play ad break now</button>
-    <div id="ctlNotes" style="display:grid;gap:8px"></div>
+    <div class="row" style="gap:10px">
+      <button class="btn" id="skipBtn" style="flex:1" title="Skip the current clip and play the next one">Skip clip</button>
+      <button class="btn" id="stopBtn" style="flex:1">Stop media</button>
+    </div>
     <div class="sep"></div>
     <div style="display:grid;gap:8px">
       <div class="label">TV input</div>
       <div class="seg" id="inputSeg"><button data-in="normal">Live TV</button><button data-in="signage">Signage</button></div>
     </div>
     <div style="display:grid;gap:8px">
-      <div class="label">Volume</div>
-      <div class="vol-row"><input type="range" id="vol" min="0" max="100" value="20"><output id="volOut">20</output>
+      <div class="label">Sound</div>
+      <div class="vol-row"><input type="range" id="vol" min="0" max="100"><output id="volOut">20</output>
         <button class="btn sm" id="muteBtn">Mute</button></div>
     </div>
-    <button class="btn" id="stopBtn">Stop media on screen</button>
     <div class="sep"></div>
     <div class="setrow">
       <div class="txt"><div class="t">Auto ad breaks</div><div class="muted small" id="schedTxt"></div></div>
       <label class="switch"><input type="checkbox" id="schedSw"><span></span></label>
-    </div>`;
+    </div>
+    <div id="ctlNotes" style="display:grid;gap:8px"></div>`;
   $('#adBtn').onclick = () => act(() => api('POST', '/api/trigger-ad', {}), 'Ad break started').then(loadStatus);
   el.querySelectorAll('#inputSeg button').forEach(b => b.onclick = () => {
     const input = b.dataset.in === 'normal' ? S.status.normal_input : S.status.signage_input;
     act(() => api('POST', '/api/input', {input}), 'Switched to ' + input);
   });
   const vol = $('#vol');
-  vol.oninput = () => { $('#volOut').textContent = vol.value; clearTimeout(volTimer); volTimer = setTimeout(() => act(() => api('POST', '/api/volume', {level: +vol.value})), 250); };
+  vol.value = localStorage.getItem('bartv_vol') || '20';
+  $('#volOut').textContent = vol.value;
+  $('#muteBtn').dataset.m = localStorage.getItem('bartv_mute') === '1' ? '1' : '';
+  $('#muteBtn').textContent = $('#muteBtn').dataset.m ? 'Unmute' : 'Mute';
+  vol.oninput = () => { $('#volOut').textContent = vol.value; localStorage.setItem('bartv_vol', vol.value); clearTimeout(volTimer); volTimer = setTimeout(() => act(() => api('POST', '/api/volume', {level: +vol.value})), 250); };
   $('#muteBtn').onclick = () => {
     const m = $('#muteBtn').dataset.m !== '1';
-    act(() => api('POST', '/api/mute', {mute: m})).then(r => { if (r) { $('#muteBtn').dataset.m = m ? '1' : ''; $('#muteBtn').textContent = m ? 'Unmute' : 'Mute'; } });
+    act(() => api('POST', '/api/mute', {mute: m})).then(r => { if (r) { $('#muteBtn').dataset.m = m ? '1' : ''; $('#muteBtn').textContent = m ? 'Unmute' : 'Mute'; localStorage.setItem('bartv_mute', m ? '1' : '0'); } });
   };
+  $('#skipBtn').onclick = () => act(() => api('POST', '/api/programs/skip', {}), 'Skipped to next clip').then(loadStatus);
   $('#stopBtn').onclick = () => act(() => api('POST', '/api/stop', {}), 'Stopped');
   $('#schedSw').onchange = e => act(() => api('POST', '/api/scheduler', {enabled: e.target.checked}), e.target.checked ? 'Auto ads on' : 'Auto ads paused').then(loadStatus);
   updateControlPanel();
@@ -671,6 +681,7 @@ function updateControlPanel() {
   const s = S.status; if (!s || !$('#adBtn')) return;
   $('#adBtn').disabled = s.ad_running;
   $('#adBtn').innerHTML = s.ad_running ? `${I.ad} Ad break playing…` : `${I.ad} Play ad break now`;
+  const skip = $('#skipBtn'); if (skip) skip.disabled = s.engine?.mode !== 'content';
   const notes = [];
   if (!s.paired) notes.push(`<div class="warn-box">TV not paired - <a href="#/settings">connect it in Settings</a>.</div>`);
   if (!s.promo_exists) notes.push(`<div class="warn-box">Promo video missing (<code>static/media/promo.mp4</code>).</div>`);
@@ -861,7 +872,7 @@ const isDirty = () => {
   if (!S.draft) return false;
   const p = S.programs.find(x => x.id === S.draft.id);
   if (!p) return false;
-  const pick = o => JSON.stringify([o.name, o.base, o.content, o.commercials, o.ads_per_hour ?? 3]);
+  const pick = o => JSON.stringify([o.name, o.base, o.content, o.commercials, o.ads_per_hour ?? 3, !!o.shuffle]);
   return pick(p) !== pick(S.draft);
 };
 function renderPrograms() {
@@ -959,6 +970,7 @@ function renderEditor() {
           <button data-b="tv" class="${d.base === 'tv' ? 'on' : ''}">Regular TV</button>
           <button data-b="content" class="${d.base === 'content' ? 'on' : ''}">Our content (playlist)</button>
         </div>
+        ${d.base === 'content' ? `<label class="check" style="margin-top:10px"><input type="checkbox" id="pShuffle" ${d.shuffle ? 'checked' : ''}> <span>Shuffle playlist <span class="muted small">- random order, every clip once per cycle</span></span></label>` : ''}
       </div>
       <div>
         <div class="section-head"><span class="label">Content${d.base === 'content' ? ` · ${d.content.length} item${d.content.length === 1 ? '' : 's'} · ${fmtDur(total(d.content)) || '0:00'}` : ''}</span>
@@ -993,6 +1005,8 @@ function renderEditor() {
   $('#pName').oninput = e => { d.name = e.target.value; syncDirty(); };
   const rateInp = $('#pRate');
   if (rateInp) rateInp.oninput = () => { d.ads_per_hour = Math.max(0, Math.min(48, parseInt(rateInp.value, 10) || 0)); syncDirty(); };
+  const shufInp = $('#pShuffle');
+  if (shufInp) shufInp.onchange = () => { d.shuffle = shufInp.checked; syncDirty(); };
   const actBtn = $('#pActivate');
   if (actBtn) actBtn.onclick = async () => {
     const okAct = await act(() => api('POST', '/api/programs/active', {id: d.id}), 'Program activated');
@@ -1020,7 +1034,7 @@ function renderEditor() {
 async function saveProgram() {
   const d = S.draft;
   if (!d.name.trim()) { toast('Program needs a name', 'err'); return; }
-  const r = await act(() => api('PATCH', '/api/programs/' + encodeURIComponent(d.id), {name: d.name.trim(), base: d.base, content: d.content, commercials: d.commercials, ads_per_hour: Math.max(0, Math.min(48, parseInt(d.ads_per_hour, 10) || 0))}), 'Saved');
+  const r = await act(() => api('PATCH', '/api/programs/' + encodeURIComponent(d.id), {name: d.name.trim(), base: d.base, content: d.content, commercials: d.commercials, ads_per_hour: Math.max(0, Math.min(48, parseInt(d.ads_per_hour, 10) || 0)), shuffle: !!d.shuffle}), 'Saved');
   if (!r) return;
   await loadPrograms();
   S.draft = JSON.parse(JSON.stringify(S.programs.find(p => p.id === d.id)));

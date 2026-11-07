@@ -460,6 +460,7 @@ class ProgramReq(BaseModel):
     content: list[str] = []
     commercials: list[str] = []
     ads_per_hour: int = Field(3, ge=0, le=48)
+    shuffle: bool = False
 
 
 class ProgramPatch(BaseModel):
@@ -468,6 +469,7 @@ class ProgramPatch(BaseModel):
     content: Optional[list[str]] = None
     commercials: Optional[list[str]] = None
     ads_per_hour: Optional[int] = Field(None, ge=0, le=48)
+    shuffle: Optional[bool] = None
 
 
 class ActiveProgramReq(BaseModel):
@@ -485,14 +487,14 @@ async def list_programs():
 @app.post("/api/programs", dependencies=[Depends(require_pin)])
 async def create_program(req: ProgramReq):
     return programs.create(req.name, req.content, req.commercials, base=req.base,
-                           ads_per_hour=req.ads_per_hour)
+                           ads_per_hour=req.ads_per_hour, shuffle=req.shuffle)
 
 
 @app.patch("/api/programs/{pid}", dependencies=[Depends(require_pin)])
 async def update_program(pid: str, req: ProgramPatch):
     before = programs.get(pid)
     p = programs.update(pid, name=req.name, content=req.content, commercials=req.commercials,
-                        base=req.base, ads_per_hour=req.ads_per_hour)
+                        base=req.base, ads_per_hour=req.ads_per_hour, shuffle=req.shuffle)
     if p is None:
         raise HTTPException(404, "Program not found")
     playback_changed = before and (before["base"], before["content"]) != (p["base"], p["content"])
@@ -509,6 +511,14 @@ async def delete_program(pid: str):
         cfg.active_program = "default" if programs.get("default") else None
         save_config(cfg)
         await engine.apply_program()
+    return {"ok": True}
+
+
+@app.post("/api/programs/skip", dependencies=[Depends(require_pin)])
+async def skip_content():
+    """Skip the currently playing playlist clip and advance to the next one."""
+    if not engine.skip_content():
+        raise HTTPException(409, "Nothing playing to skip")
     return {"ok": True}
 
 

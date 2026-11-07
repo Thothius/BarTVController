@@ -327,6 +327,56 @@ def test_switch_to_tv_program_stops_content_on_screen(tmp_path):
     asyncio.run(run())
 
 
+def test_shuffle_plays_each_clip_once_per_cycle(tmp_path):
+    async def run():
+        engine, tv, hub, programs = make_engine(tmp_path)
+        p = programs.create("Shuffle", ["c1.mp4", "c2.mp4", "ad1.mp4"], [], base="content",
+                            shuffle=True)
+        engine.cfg.active_program = p["id"]
+        await engine.apply_program()
+        seen = []
+        for _ in range(3):  # one full cycle: all three files, no repeats inside it
+            await wait_sent(hub, "content_start")
+            cur = [e for e in hub.sent if e["type"] == "content_start"][-1]["url"]
+            seen.append(cur)
+            engine.notify_ended("content")
+            await asyncio.sleep(0.15)
+        assert sorted(seen) == ["/media/ad1.mp4", "/media/c1.mp4", "/media/c2.mp4"]
+        assert len(set(seen)) == 3
+        await engine.shutdown()
+    asyncio.run(run())
+
+
+def test_skip_content_advances_playlist(tmp_path):
+    async def run():
+        engine, tv, hub, programs = make_engine(tmp_path)
+        p = programs.create("P", ["c1.mp4", "c2.mp4"], [], base="content")
+        engine.cfg.active_program = p["id"]
+        await engine.apply_program()
+        first = await wait_sent(hub, "content_start")
+        assert engine.skip_content() is True
+        await asyncio.sleep(0.2)
+        starts = [e for e in hub.sent if e["type"] == "content_start"]
+        assert len(starts) == 2 and starts[1]["url"] != starts[0]["url"]
+        assert starts[1]["seq"] != starts[0]["seq"]
+        await engine.shutdown()
+        assert engine.skip_content() is False  # nothing playing
+    asyncio.run(run())
+
+
+def test_skip_endpoint_requires_pin_and_advances(app_env):
+    client, main, _ = app_env
+    assert client.post("/api/programs/skip").status_code == 401
+    pair(client)
+    p = client.post("/api/programs", json={"name": "SkipMe", "base": "content",
+                                           "content": ["c1.mp4", "c2.mp4"]}, headers=H).json()
+    r = client.post("/api/programs/active", json={"id": p["id"]}, headers=H)
+    assert r.status_code == 200
+    time.sleep(0.3)
+    r = client.post("/api/programs/skip", headers=H)
+    assert r.status_code == 200
+
+
 def test_corrupt_programs_file_is_backed_up(tmp_path):
     path = tmp_path / "programs.json"
     path.write_text('{"default": {"id": "def')  # half-written

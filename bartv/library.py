@@ -187,10 +187,11 @@ class ProgramStore:
         return {"id": pid, "name": p.get("name", pid), "base": p.get("base", "content"),
                 "content": p.get("content", []), "commercials": p.get("commercials", []),
                 "ads_per_hour": p.get("ads_per_hour", 3),
+                "shuffle": bool(p.get("shuffle", False)),
                 "created": p.get("created")}
 
     def create(self, name: str, content: list[str], commercials: list[str], base: str = "content",
-               ads_per_hour: int = 3) -> dict:
+               ads_per_hour: int = 3, shuffle: bool = False) -> dict:
         slug = self._slug(name)
         pid, i = slug, 2
         while pid in self._data:
@@ -202,6 +203,7 @@ class ProgramStore:
             "content": list(content),
             "commercials": list(commercials),
             "ads_per_hour": max(0, min(48, int(ads_per_hour))),
+            "shuffle": bool(shuffle),
             "created": _now(),
         }
         self._save()
@@ -209,7 +211,7 @@ class ProgramStore:
 
     def update(self, pid: str, name: Optional[str] = None, content: Optional[list[str]] = None,
                commercials: Optional[list[str]] = None, base: Optional[str] = None,
-               ads_per_hour: Optional[int] = None) -> Optional[dict]:
+               ads_per_hour: Optional[int] = None, shuffle: Optional[bool] = None) -> Optional[dict]:
         if pid not in self._data:
             return None
         p = self._data[pid]
@@ -223,6 +225,8 @@ class ProgramStore:
             p["commercials"] = list(commercials)
         if ads_per_hour is not None:
             p["ads_per_hour"] = max(0, min(48, int(ads_per_hour)))
+        if shuffle is not None:
+            p["shuffle"] = bool(shuffle)
         self._save()
         return self._out(pid)
 
