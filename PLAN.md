@@ -199,3 +199,5 @@ Programs + ad pool. Semantics agreed with Ted:
   current clip, next ad) and a Switch-program quick picker. Assets and
   Programs moved to top-bar icons next to Settings; old tiles removed
   from home. Live control stays in the right rail. Static-only change.
+
+- CageFiction startup channel + mock ad pool (3 rendered 15s slates: black bg, bold promo text); playlist shuffle per program + Skip clip control; live rail regrouped (Playback / TV input / Sound / Auto ads); 30 tests green
