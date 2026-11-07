@@ -63,10 +63,11 @@ Programs + ad pool. Semantics agreed with Ted:
 
 - [x] Demo media in `static/media/`: labeled synthetic clips
       (main content, MMA highlights, 2 ads) + CC0 flower clip
-- [ ] Laptop `config.json`: `mock_tv: true` so the dashboard/kiosk demo
-      runs without the TV
-- [ ] Open `/` and `/display` in laptop browser tabs; verify ad break,
-      stream, files, volume/mute against MockClient
+- [x] Laptop `config.json`: `mock_tv: true`, 2-min ad cadence for demo
+- [x] Server running on laptop (`python -m bartv.run 8000`, detached);
+      pair + manual ad break + scheduled ad verified via API
+- [ ] Ted: open `http://localhost:8000/` (dashboard, PIN in config.json)
+      and `http://localhost:8000/display` (kiosk) in browser tabs
 
 ### Phase 2 — Programs & ad pool engine
 
@@ -83,8 +84,7 @@ Programs + ad pool. Semantics agreed with Ted:
 
 - [ ] `scripts/fetch.py`: yt-dlp wrapper (URL -> `static/media/`,
       optional trim/rename); `pip install yt-dlp` on laptop
-- [ ] Gemini-generated commercial (needs `GEMINI_API_KEY` — ask Ted
-      when ready); output lands in `static/media/` and joins the pool
+- [x] AI commercial generation: DROPPED — Ted makes media himself
 
 ### Phase 4 — Electron shell (OPTIONAL, deferred)
 
@@ -101,7 +101,6 @@ Programs + ad pool. Semantics agreed with Ted:
 ## Open decisions
 
 - TV network path (Phase 0) — blocked on Ted's info.
-- Gemini API key for AI commercials (Phase 3).
 - Electron: only if the browser flow annoys Ted in daily use.
 
 ## Status log
@@ -109,4 +108,10 @@ Programs + ad pool. Semantics agreed with Ted:
 - 2026-11-07 — Laptop clone + setup OK (Python 3.12.4). TV unreachable:
   "Drink" Wi-Fi client isolation suspected; full /24 scan for webOS
   ports found nothing. Demo media generated (5 labeled clips + flower)
-  and pushed to laptop. PLAN.md created. Programs engine spec agreed.
+  and copied to laptop `static/media/`. PLAN.md created. Programs engine
+  spec agreed.
+- 2026-11-07 (later) — Laptop server LIVE in mock mode on port 8000
+  (PIN auto-generated into config.json). `promo.mp4` aliased to
+  `ad_weekend.mp4` so the legacy ad break works. Verified: pair, manual
+  trigger-ad, scheduled 2-min ad cycle, /api/files (7 files). Gemini
+  dropped (Ted makes media). NEXT: Phase 2 programs + ad pool engine.
