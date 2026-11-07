@@ -224,3 +224,17 @@ def test_delete_in_use_file_returns_409(app_env, monkeypatch):
     monkeypatch.setattr(main.assets, "delete", locked)
     r = client.delete("/api/assets/promo.mp4", headers=H)
     assert r.status_code == 409 and "in use" in r.json()["detail"]
+
+
+def test_real_tv_unreachable_gives_clear_errors(app_env):
+    client, main, _ = app_env
+    client.post("/api/tv", json={"mock_tv": False, "tv_ip": "127.0.0.1"}, headers=H)
+    chk = client.get("/api/tv/check").json()
+    assert chk["reachable"] is False and chk["tv_ip"] == "127.0.0.1"
+    client.post("/api/pair", headers=H)
+    for _ in range(50):
+        st = client.get("/api/pair/status").json()
+        if not st["running"]:
+            break
+        time.sleep(0.1)
+    assert "Can't reach the TV at 127.0.0.1" in st["error"]

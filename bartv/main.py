@@ -381,6 +381,17 @@ async def tv_settings(req: TVSettings):
     return await status()
 
 
+@app.get("/api/tv/check")
+async def tv_check():
+    """Reachability of the configured TV's control ports - first thing to look at on a new network."""
+    from .tv import probe
+    ports = {} if cfg.mock_tv else await probe(cfg.tv_ip)
+    return {"tv_ip": cfg.tv_ip, "mock_tv": cfg.mock_tv, "ports": ports,
+            "reachable": True if cfg.mock_tv else any(ports.values()),
+            "paired": bool(cfg.client_key), "connected": bool(tv.client and tv.client.is_connected()),
+            "tv_inputs": tv.last_inputs}
+
+
 @app.delete("/api/tvs/{ip}", dependencies=[Depends(require_pin)])
 async def forget_tv(ip: str):
     cfg.tvs = [t for t in cfg.tvs if t.get("ip") != ip]

@@ -9,6 +9,35 @@ from .config import Config, save_config
 log = logging.getLogger("bartv.tv")
 
 PAIR_TIMEOUT_SECONDS = 60
+CALL_TIMEOUT_SECONDS = 10
+WEBOS_PORTS = (3000, 3001)
+
+
+async def probe(ip: str, timeout: float = 1.5) -> dict:
+    """TCP check of the webOS control ports: tells 'TV off / wrong network' apart from pairing problems."""
+    async def one(port):
+        try:
+            _, w = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout)
+            w.close()
+            return True
+        except Exception:
+            return False
+    results = await asyncio.gather(*(one(p) for p in WEBOS_PORTS))
+    return {str(p): ok for p, ok in zip(WEBOS_PORTS, results)}
+
+
+def unreachable_msg(ip: str) -> str:
+    return (f"Can't reach the TV at {ip} - check it's switched on, on the same Wi-Fi as this laptop, "
+            "and that the IP is right (TV: Settings > Network). On some models also enable "
+            "'LG Connect Apps' / 'Mobile TV On'.")
+
+
+def friendly(e: BaseException, ip: str) -> str:
+    if isinstance(e, WebOsTvPairError):
+        return "The TV refused the pairing (prompt declined?) - press Pair and choose Allow"
+    if isinstance(e, (asyncio.TimeoutError, OSError)) or not str(e):
+        return unreachable_msg(ip)
+    return f"TV error: {e}"
 
 SSDP_ADDR = ("239.255.255.250", 1900)
 SSDP_SEARCH = (
@@ -134,20 +163,29 @@ class TVController:
         await self._discover_inputs()
         return True
 
-    async def _call(self, method: str, *args):
-        try:
-            if not await self._ensure():
-                raise RuntimeError("Pair the TV first")
-            client = self.client
-            return await getattr(client, method)(*args)
-        except RuntimeError:
-            raise
-        except Exception:
-            log.warning("TV call %s failed, reconnecting once", method, exc_info=True)
-            await self.disconnect()
+    async def _attempt(self, method: str, *args):
+        async def go():
             if not await self._ensure():
                 raise RuntimeError("Pair the TV first")
             return await getattr(self.client, method)(*args)
+        return await asyncio.wait_for(go(), CALL_TIMEOUT_SECONDS)
+
+    async def _call(self, method: str, *args):
+        try:
+            return await self._attempt(method, *args)
+        except RuntimeError:
+            raise
+        except Exception:
+            # A TV that went to standby leaves a dead socket behind: reconnect once.
+            log.warning("TV call %s failed, reconnecting once", method, exc_info=True)
+            await self.disconnect()
+        try:
+            return await self._attempt(method, *args)
+        except RuntimeError:
+            raise
+        except Exception as e:
+            await self.disconnect()
+            raise RuntimeError(friendly(e, self.cfg.tv_ip)) from e
 
     async def set_input(self, input_id: str):
         async with self._lock:
@@ -165,12 +203,20 @@ class TVController:
         """Connect without a key; the TV shows an Allow prompt to accept on the remote."""
         async with self._lock:
             await self.disconnect()
+            if not self.cfg.mock_tv and not any((await probe(self.cfg.tv_ip)).values()):
+                raise RuntimeError(unreachable_msg(self.cfg.tv_ip))
             client = self._new_client(None)
             try:
                 await asyncio.wait_for(client.connect(), PAIR_TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
                 await client.disconnect()
                 raise RuntimeError("Pairing timed out - accept the prompt on the TV")
+            except (WebOsTvPairError, OSError) as e:
+                try:
+                    await client.disconnect()
+                except Exception:
+                    pass
+                raise RuntimeError(friendly(e, self.cfg.tv_ip)) from e
             except asyncio.CancelledError:
                 try:
                     await client.disconnect()
