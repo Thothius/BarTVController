@@ -377,6 +377,15 @@ def test_skip_endpoint_requires_pin_and_advances(app_env):
     assert r.status_code == 200
 
 
+def test_asset_role_tagging(tmp_path):
+    engine, tv, hub, programs = make_engine(tmp_path)
+    a = engine.assets.update("c1.mp4", role="commercial")
+    assert a["role"] == "commercial"
+    assert engine.assets.list()[0]["role"] in (None, "commercial")
+    a = engine.assets.update("c1.mp4", role="unsorted")
+    assert not a.get("role")
+
+
 def test_corrupt_programs_file_is_backed_up(tmp_path):
     path = tmp_path / "programs.json"
     path.write_text('{"default": {"id": "def')  # half-written

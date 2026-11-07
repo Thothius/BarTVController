@@ -95,6 +95,7 @@ class AssetStore:
                 "name": m.get("name") or f.name,
                 "thumb": m.get("thumb"),
                 "duration": m.get("duration"),
+                "role": m.get("role"),
                 "size": f.stat().st_size,
                 "added": m.get("added"),
                 "kind": kind_of(f.suffix),
@@ -128,7 +129,7 @@ class AssetStore:
         return self.register(target.name)
 
     def update(self, filename: str, name: Optional[str] = None, thumb: Optional[str] = None,
-               duration: Optional[float] = None) -> Optional[dict]:
+               duration: Optional[float] = None, role: Optional[str] = None) -> Optional[dict]:
         safe = sanitize_filename(filename)
         if not (self.dir / safe).is_file():
             return None
@@ -140,6 +141,12 @@ class AssetStore:
             m["thumb"] = thumb or None
         if duration is not None:
             m["duration"] = round(duration, 2)
+        if role is not None:
+            # "unsorted" clears the tag; "content"/"commercial" set it.
+            if role in ("content", "commercial"):
+                m["role"] = role
+            else:
+                m.pop("role", None)
         self._save_meta(meta)
         return next((a for a in self.list() if a["file"] == safe), None)
 

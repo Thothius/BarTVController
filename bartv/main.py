@@ -338,6 +338,7 @@ class AssetPatch(BaseModel):
     name: Optional[str] = None
     thumb: Optional[str] = Field(None, max_length=400_000)
     duration: Optional[float] = Field(None, ge=0)
+    role: Optional[str] = None  # "content" | "commercial" | "unsorted" (clears)
 
 
 class TVSettings(BaseModel):
@@ -430,8 +431,11 @@ async def upload_asset(filename: str, request: Request, replace: bool = False):
 async def patch_asset(filename: str, req: AssetPatch):
     if req.thumb is not None and req.thumb and not req.thumb.startswith("data:image/"):
         raise HTTPException(400, "thumb must be a data:image/ URL")
+    if req.role is not None and req.role not in ("content", "commercial", "unsorted"):
+        raise HTTPException(400, "role must be content, commercial or unsorted")
     try:
-        asset = assets.update(filename, name=req.name, thumb=req.thumb, duration=req.duration)
+        asset = assets.update(filename, name=req.name, thumb=req.thumb, duration=req.duration,
+                              role=req.role)
     except ValueError as e:
         raise HTTPException(400, str(e))
     if asset is None:
