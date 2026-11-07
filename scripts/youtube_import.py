@@ -1,8 +1,9 @@
 """Import YouTube channel videos into static/media as content assets.
 
 Lists a channel's videos (views, likes, duration, upload date), downloads the
-chosen ones as H.264/AAC mp4 named `content_<video title>.mp4`, and records
-them in `static/media/index.json`.
+chosen ones as H.264/AAC mp4 named `content_<video_title>.mp4`, registers them
+in the asset library (`assets.json`, display name = video title) and records the
+YouTube metadata in `static/media/index.json`.
 
 Usage:
   python scripts/youtube_import.py https://www.youtube.com/@CageFiction --list
@@ -13,7 +14,6 @@ Requires: pip install yt-dlp imageio-ffmpeg  (ffmpeg on PATH also works)
 """
 import argparse
 import json
-import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -22,6 +22,11 @@ from pathlib import Path
 import yt_dlp
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from bartv.config import CONFIG_PATH  # noqa: E402
+from bartv.library import AssetStore, sanitize_filename  # noqa: E402
+
 MEDIA = ROOT / "static" / "media"
 INDEX = MEDIA / "index.json"
 
@@ -38,9 +43,7 @@ def ffmpeg_path():
 
 
 def safe_name(title):
-    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", title)
-    name = re.sub(r"\s+", " ", name).strip(" .")
-    return "content_" + (name[:120] or "untitled")
+    return sanitize_filename("content_" + title[:100])
 
 
 def channel_videos(channel):
@@ -124,6 +127,7 @@ def main():
     ids = args.ids.split(",") if args.ids else [v["id"] for v in videos[: args.top]]
     MEDIA.mkdir(parents=True, exist_ok=True)
     index = load_index()
+    library = AssetStore(MEDIA, CONFIG_PATH.parent / "assets.json")
     done = {a.get("youtube_id") for a in index["assets"] if (MEDIA / a["file"]).exists()}
     for vid in ids:
         if vid in done:
@@ -135,6 +139,7 @@ def main():
         index["assets"] = [a for a in index["assets"] if a.get("youtube_id") != vid]
         index["assets"].append(index_entry(info, file))
         save_index(index)
+        library.update(file, name=info["title"], duration=info.get("duration"))
         print(f"  -> static/media/{file}")
     print(f"index: {INDEX.relative_to(ROOT)} ({len(index['assets'])} assets)")
 
