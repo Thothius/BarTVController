@@ -10,17 +10,65 @@ log = logging.getLogger("bartv.tv")
 
 PAIR_TIMEOUT_SECONDS = 60
 
+SSDP_ADDR = ("239.255.255.250", 1900)
+SSDP_SEARCH = (
+    "M-SEARCH * HTTP/1.1\r\n"
+    "HOST: 239.255.255.250:1900\r\n"
+    'MAN: "ssdp:discover"\r\n'
+    "MX: 2\r\n"
+    "ST: urn:lge-com:service:webos-second-screen:1\r\n\r\n"
+).encode()
+
+
+async def discover_tvs(timeout: float = 3.0) -> list[dict]:
+    """Find LG webOS TVs via SSDP. Returns [{ip, name}]; empty if the network blocks multicast."""
+    import socket
+
+    found: dict[str, dict] = {}
+    loop = asyncio.get_running_loop()
+
+    class Proto(asyncio.DatagramProtocol):
+        def datagram_received(self, data, addr):
+            text = data.decode(errors="ignore")
+            if "lge" not in text.lower() and "webos" not in text.lower():
+                return
+            name = ""
+            for line in text.split("\r\n"):
+                if line.lower().startswith("dlnadevicename.lge.com:"):
+                    name = line.split(":", 1)[1].strip()
+            found.setdefault(addr[0], {"ip": addr[0], "name": name or "LG webOS TV"})
+
+    try:
+        transport, _ = await loop.create_datagram_endpoint(
+            Proto, local_addr=("0.0.0.0", 0), family=socket.AF_INET)
+    except OSError:
+        log.debug("SSDP socket failed", exc_info=True)
+        return []
+    try:
+        for _ in range(3):
+            transport.sendto(SSDP_SEARCH, SSDP_ADDR)
+            await asyncio.sleep(timeout / 3)
+    finally:
+        transport.close()
+    return list(found.values())
+
 
 class MockClient:
     """Stand-in for WebOsClient when no TV is available (mock_tv: true)."""
 
+    # Simulates the time a person takes to press Accept on the remote during pairing.
+    PAIR_DELAY_SECONDS = 3.0
+
     def __init__(self, host, client_key=None):
         self.host = host
+        self._pairing = client_key is None
         self.client_key = client_key or "mock-client-key"
         self.calls: list[tuple] = []
         self._connected = False
 
     async def connect(self):
+        if self._pairing and self.PAIR_DELAY_SECONDS:
+            await asyncio.sleep(self.PAIR_DELAY_SECONDS)
         self._connected = True
 
     async def disconnect(self):
@@ -123,6 +171,12 @@ class TVController:
             except asyncio.TimeoutError:
                 await client.disconnect()
                 raise RuntimeError("Pairing timed out - accept the prompt on the TV")
+            except asyncio.CancelledError:
+                try:
+                    await client.disconnect()
+                except Exception:
+                    pass
+                raise
             self.client = client
             self.cfg.client_key = client.client_key
             save_config(self.cfg)

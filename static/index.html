@@ -3,184 +3,1153 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bar TV</title>
+<title>BarTV Controller</title>
 <style>
-  :root { color-scheme: dark; --bg:#0b0b0d; --card:#1a1a1e; --accent:#ffb340; --ok:#30d158; --err:#ff453a; }
+  :root {
+    color-scheme: dark;
+    --bg:#0d0e12; --panel:#15171d; --panel2:#1b1e26; --line:#262a33; --line2:#323744;
+    --text:#e8eaf0; --muted:#8a90a0; --dim:#5d6372;
+    --accent:#ffb340; --accent-ink:#1a1204; --ok:#34d399; --warn:#fbbf24; --err:#f87171; --blue:#60a5fa;
+    --r:12px; --r-sm:8px;
+  }
   * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:#eee; }
-  main { max-width: 520px; margin: 0 auto; padding: 14px; display: grid; gap: 12px; }
-  h1 { font-size: 1.1rem; margin: 6px 0 0; font-weight: 600; }
-  .card { background: var(--card); border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
-  .card h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color:#8e8e93; margin:0; }
-  .row { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
-  .row.two { grid-template-columns: 1fr 1fr; }
-  button { font: inherit; font-size: 1rem; font-weight: 600; padding: 18px 8px; border: 0; border-radius: 12px; background:#2c2c31; color:#fff; cursor:pointer; }
-  button:active { transform: scale(.97); }
-  button.primary { background: var(--accent); color:#000; padding: 22px; font-size: 1.15rem; }
-  button.ghost { background: transparent; border:1px solid #3a3a3f; color:#bbb; font-weight:400; padding: 10px; font-size:.9rem; }
-  button:disabled { opacity: .45; }
-  input[type=range] { width: 100%; height: 34px; accent-color: var(--accent); }
-  select, input[type=text], input[type=url] { width: 100%; font: inherit; padding: 12px; border-radius: 10px; border:1px solid #3a3a3f; background:#141417; color:#eee; }
-  .status { font-size: .85rem; color:#999; display:grid; gap:4px; }
-  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; background:var(--err); vertical-align:middle; }
-  .dot.on { background: var(--ok); }
-  #toast { position: fixed; left:50%; bottom:18px; transform:translateX(-50%); background:#2c2c31; padding:10px 16px; border-radius:10px; opacity:0; transition:opacity .25s; pointer-events:none; max-width:90vw; text-align:center; }
-  #toast.show { opacity: 1; }
-  #toast.err { background: var(--err); color:#fff; }
-  #pinModal { position:fixed; inset:0; background:#000d; display:none; align-items:center; justify-content:center; }
-  #pinModal.show { display:flex; }
-  #pinModal .card { width: 280px; }
+  html, body { height: 100%; }
+  body { margin:0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); }
+  a { color: inherit; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  input, select { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
+
+  /* ---------- top bar ---------- */
+  .topbar { position: sticky; top: 0; z-index: 20; height: 60px; display:flex; align-items:center; gap:16px; padding: 0 28px;
+            background: rgba(13,14,18,.86); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.01em; text-decoration:none; font-size:15px; }
+  .brand .logo { width:28px; height:28px; border-radius:8px; background: linear-gradient(135deg, var(--accent), #ff7a3d);
+                 display:grid; place-items:center; color: var(--accent-ink); font-size:13px; font-weight:800; }
+  .crumbs { color: var(--muted); display:flex; align-items:center; gap:8px; }
+  .crumbs b { color: var(--text); font-weight:600; }
+  .spacer { flex: 1; }
+  .chip { display:inline-flex; align-items:center; gap:8px; height:34px; padding: 0 12px; border-radius: 999px;
+          background: var(--panel); border:1px solid var(--line); color: var(--muted); font-size:13px; white-space: nowrap; }
+  button.chip:hover { border-color: var(--line2); color: var(--text); }
+  .chip b { color: var(--text); font-weight: 600; }
+  .dot { width:8px; height:8px; border-radius:50%; background: var(--dim); flex: none; }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(52,211,153,.15); }
+  .dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(251,191,36,.15); }
+  .dot.err { background: var(--err); box-shadow: 0 0 0 3px rgba(248,113,113,.15); }
+  .dot.pulse { animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .gear { width:38px; height:38px; border-radius: 10px; display:grid; place-items:center; background: var(--panel);
+          border:1px solid var(--line); color: var(--muted); }
+  .gear:hover, .gear.active { color: var(--text); border-color: var(--line2); }
+  .gear svg { width:19px; height:19px; }
+
+  /* ---------- layout ---------- */
+  main { max-width: 1320px; margin: 0 auto; padding: 28px; }
+  .view-head { display:flex; align-items:center; gap:14px; margin-bottom: 22px; }
+  .view-head h1 { font-size: 22px; margin:0; font-weight: 700; letter-spacing: -.01em; }
+  .view-head .sub { color: var(--muted); }
+  .back { width:36px; height:36px; border-radius:10px; border:1px solid var(--line); background: var(--panel); display:grid; place-items:center; color: var(--muted); text-decoration: none; }
+  .back:hover { color: var(--text); border-color: var(--line2); }
+
+  .panel { background: var(--panel); border:1px solid var(--line); border-radius: var(--r); }
+  .panel-pad { padding: 20px; }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 600; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12.5px; }
+
+  /* ---------- buttons / inputs ---------- */
+  .btn { height: 38px; padding: 0 16px; border-radius: 10px; border:1px solid var(--line2); background: var(--panel2);
+         display:inline-flex; align-items:center; justify-content:center; gap:8px; font-weight: 600; white-space: nowrap; }
+  .btn:hover:not(:disabled) { border-color: #444a58; background: #222631; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover:not(:disabled) { background: #ffc266; border-color: #ffc266; }
+  .btn.danger { color: var(--err); }
+  .btn.danger:hover:not(:disabled) { border-color: rgba(248,113,113,.5); background: rgba(248,113,113,.08); }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn.ghost:hover:not(:disabled) { color: var(--text); background: var(--panel2); border-color: var(--line); }
+  .btn.sm { height: 30px; padding: 0 11px; font-size: 12.5px; border-radius: 8px; }
+  .btn.lg { height: 52px; font-size: 16px; border-radius: 12px; }
+  .btn svg { width: 16px; height: 16px; }
+  .icon-btn { width: 30px; height: 30px; padding: 0; border-radius: 8px; border:1px solid transparent; background: transparent;
+              display:grid; place-items:center; color: var(--muted); }
+  .icon-btn:hover { color: var(--text); background: var(--panel2); border-color: var(--line); }
+  .icon-btn.danger:hover { color: var(--err); }
+  .icon-btn svg { width: 16px; height: 16px; }
+  .field { height: 38px; padding: 0 12px; border-radius: 10px; border:1px solid var(--line2); background: #101217; outline: none; min-width: 0; }
+  .field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,179,64,.15); }
+  .seg { display:inline-flex; padding: 3px; gap: 3px; border-radius: 10px; background: #101217; border:1px solid var(--line); }
+  .seg button { height: 30px; padding: 0 12px; border:0; border-radius: 7px; background: transparent; color: var(--muted); font-weight: 600; font-size: 13px; }
+  .seg button.on { background: var(--panel2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line2); }
+  .switch { position: relative; width: 42px; height: 24px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch span { position:absolute; inset:0; border-radius: 999px; background: #2a2e38; transition: .2s; cursor: pointer; }
+  .switch span::after { content:""; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#cfd3dc; transition:.2s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(18px); background: #fff; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+
+  /* ---------- home ---------- */
+  .home { display:grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; align-items: start; }
+  .tiles { display:grid; gap: 22px; }
+  .tile { position: relative; display:block; text-decoration:none; padding: 24px; border-radius: 16px; background: var(--panel);
+          border:1px solid var(--line); transition: border-color .15s, transform .15s; overflow: hidden; }
+  .tile:hover { border-color: #3a4050; }
+  .tile-head { display:flex; align-items:flex-start; gap: 16px; }
+  .tile-icon { width:46px; height:46px; border-radius: 12px; display:grid; place-items:center; flex:none; }
+  .tile-icon svg { width: 22px; height: 22px; }
+  .tile-icon.assets { background: rgba(96,165,250,.12); color: var(--blue); }
+  .tile-icon.programs { background: rgba(255,179,64,.12); color: var(--accent); }
+  .tile h2 { margin: 0; font-size: 20px; letter-spacing: .04em; }
+  .tile p { margin: 4px 0 0; color: var(--muted); }
+  .tile .open { margin-left: auto; color: var(--muted); display:flex; align-items:center; gap:6px; font-weight:600; font-size: 13px; }
+  .tile:hover .open { color: var(--text); }
+  .tile-body { margin-top: 20px; }
+  .strip { display:grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+  .strip .th { aspect-ratio: 16/9; border-radius: 8px; }
+  .prog-chips { display:flex; flex-wrap: wrap; gap: 8px; }
+  .prog-chip { padding: 8px 12px; border-radius: 10px; background: var(--panel2); border:1px solid var(--line); font-weight: 600; font-size: 13px; }
+  .prog-chip span { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .empty-line { color: var(--dim); font-size: 13px; }
+
+  .control { display:grid; gap: 18px; position: sticky; top: 84px; }
+  .control .row { display:flex; align-items:center; gap: 10px; }
+  .control .seg { width: 100%; }
+  .control .seg button { flex: 1; height: 34px; }
+  .vol-row { display:flex; align-items:center; gap: 12px; }
+  .vol-row output { width: 30px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sep { height: 1px; background: var(--line); margin: 0 -20px; }
+  .kv { display:flex; justify-content: space-between; gap: 10px; }
+  .warn-box { padding: 10px 12px; border-radius: 10px; background: rgba(251,191,36,.08); border:1px solid rgba(251,191,36,.25); color: #f5d27a; font-size: 13px; }
+  .err-box { padding: 10px 12px; border-radius: 10px; background: rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.25); color: #fca5a5; font-size: 13px; }
+
+  /* ---------- thumbs ---------- */
+  .th { position: relative; background: #0a0b0e center/cover no-repeat; overflow: hidden; display:grid; place-items:center; color: var(--dim); border:1px solid var(--line); }
+  .th svg { width: 26px; height: 26px; opacity: .7; }
+  .th.audio { background: linear-gradient(135deg, #1d2438, #141824); color: var(--blue); }
+  .badge { position:absolute; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: rgba(0,0,0,.7); color: #fff; letter-spacing: .02em; }
+  .badge.tl { top: 8px; left: 8px; text-transform: uppercase; }
+  .badge.br { bottom: 8px; right: 8px; font-variant-numeric: tabular-nums; }
+
+  /* ---------- assets ---------- */
+  .toolbar { display:flex; align-items:center; gap: 10px; margin-bottom: 18px; }
+  .toolbar .field.search { width: 280px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px; }
+  .card { background: var(--panel); border:1px solid var(--line); border-radius: var(--r); overflow: hidden; display:flex; flex-direction: column; }
+  .card:hover { border-color: #353a47; }
+  .card .th { aspect-ratio: 16/9; border: 0; border-bottom: 1px solid var(--line); }
+  .card .hover { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap: 8px; background: rgba(8,9,12,.55); opacity: 0; transition: opacity .15s; }
+  .card:hover .hover { opacity: 1; }
+  .card .info { padding: 12px 12px 10px 14px; display:flex; align-items:flex-start; gap: 6px; }
+  .card .info .txt { flex: 1; min-width: 0; }
+  .card .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text; border-radius: 6px; padding: 1px 4px; margin: -1px -4px; }
+  .card .name:hover { background: var(--panel2); }
+  .card .name-input { width: 100%; height: 28px; padding: 0 6px; margin: -3px -6px; font-weight: 600; }
+  .card .meta { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .file { color: var(--dim); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .acts { display:flex; gap: 2px; }
+
+  .drop { border: 1.5px dashed var(--line2); border-radius: 16px; padding: 46px; text-align: center; color: var(--muted); background: var(--panel); }
+  .drop h3 { color: var(--text); margin: 10px 0 4px; font-size: 16px; }
+  .drop svg { width: 34px; height: 34px; color: var(--blue); }
+  .drop-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(13,14,18,.82); display:grid; place-items:center; pointer-events: none; }
+  .drop-overlay div { padding: 60px 90px; border: 2px dashed var(--accent); border-radius: 20px; font-size: 20px; font-weight: 700; color: var(--accent); background: rgba(255,179,64,.05); }
+
+  .uploads { display:grid; gap: 8px; margin-bottom: 18px; }
+  .up { display:grid; grid-template-columns: 1fr 140px 70px; align-items:center; gap: 14px; padding: 10px 14px; border-radius: 10px; background: var(--panel); border:1px solid var(--line); font-size: 13px; }
+  .bar { height: 6px; border-radius: 99px; background: #262a33; overflow: hidden; }
+  .bar i { display:block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  .up.done .bar i { background: var(--ok); }
+  .up.fail .bar i { background: var(--err); }
+
+  /* ---------- programs ---------- */
+  .split { display:grid; grid-template-columns: 300px minmax(0, 1fr); gap: 22px; align-items: start; }
+  .plist { padding: 10px; display:grid; gap: 4px; position: sticky; top: 84px; }
+  .plist .head { display:flex; align-items:center; justify-content: space-between; padding: 8px 8px 10px; }
+  .pitem { text-align: left; width: 100%; padding: 11px 12px; border-radius: 10px; border:1px solid transparent; background: transparent; display:flex; align-items:center; gap: 10px; }
+  .pitem:hover { background: var(--panel2); }
+  .pitem.on { background: var(--panel2); border-color: var(--line2); }
+  .pitem .pi { width: 34px; height: 34px; border-radius: 9px; display:grid; place-items:center; flex: none; background: rgba(255,179,64,.1); color: var(--accent); }
+  .pitem .pi.tv { background: rgba(52,211,153,.1); color: var(--ok); }
+  .pitem .pi svg { width: 17px; height: 17px; }
+  .pitem .t { font-weight: 600; }
+  .pitem .s { color: var(--muted); font-size: 12px; }
+  .editor { padding: 24px; display:grid; gap: 22px; }
+  .editor .namefield { font-size: 20px; font-weight: 700; height: 46px; width: 100%; }
+  .section-head { display:flex; align-items:center; gap: 10px; margin-bottom: 10px; }
+  .section-head .label { flex: 1; }
+  .rows { display:grid; gap: 6px; }
+  .rowi { display:grid; grid-template-columns: 26px 96px minmax(0,1fr) auto auto; align-items:center; gap: 12px; padding: 8px 10px; border-radius: 10px; background: #111319; border:1px solid var(--line); }
+  .rowi .n { color: var(--dim); font-variant-numeric: tabular-nums; text-align: right; font-size: 12px; }
+  .rowi .th { width: 96px; aspect-ratio: 16/9; border-radius: 6px; }
+  .rowi .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rowi .nm.missing { color: var(--err); }
+  .rowi .d { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .rowi .ops { display:flex; gap: 2px; }
+  .empty-rows { padding: 18px; border-radius: 10px; border:1px dashed var(--line2); color: var(--dim); text-align: center; }
+  .tv-base { display:flex; gap: 14px; align-items:center; padding: 16px; border-radius: 12px; background: rgba(52,211,153,.06); border:1px solid rgba(52,211,153,.2); }
+  .tv-base svg { width: 26px; height: 26px; color: var(--ok); flex: none; }
+  .editor-foot { display:flex; align-items:center; gap: 10px; padding-top: 4px; border-top: 1px solid var(--line); padding-top: 18px; }
+
+  /* ---------- settings ---------- */
+  .settings { display:grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 22px; align-items: start; }
+  .settings .col { display:grid; gap: 22px; }
+  .tvhero { padding: 24px; display:grid; gap: 20px; }
+  .tvhero .top { display:flex; align-items:center; gap: 16px; }
+  .tvhero .scr { width: 64px; height: 44px; border-radius: 8px; border: 2px solid var(--line2); display:grid; place-items:center; color: var(--muted); position: relative; }
+  .tvhero .scr::after { content:""; position:absolute; bottom:-8px; width: 22px; height: 4px; border-radius: 2px; background: var(--line2); }
+  .tvhero .scr.ok { border-color: var(--ok); color: var(--ok); }
+  .tvhero .scr.wait { border-color: var(--warn); color: var(--warn); animation: pulse 1.1s infinite; }
+  .tvhero .scr svg { width: 22px; height: 22px; }
+  .tvhero h2 { margin: 0; font-size: 18px; }
+  .steps { display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .step { padding: 12px 14px; border-radius: 10px; background: #111319; border:1px solid var(--line); display:flex; gap: 10px; align-items:center; color: var(--muted); }
+  .step i { width: 24px; height: 24px; border-radius: 50%; display:grid; place-items:center; font-style: normal; font-weight: 700; font-size: 12px; background: #262a33; flex: none; }
+  .step.done { color: var(--text); }
+  .step.done i { background: var(--ok); color: #062014; }
+  .step.cur { color: var(--text); border-color: rgba(255,179,64,.45); background: rgba(255,179,64,.06); }
+  .step.cur i { background: var(--accent); color: var(--accent-ink); }
+  .pairing-box { display:flex; align-items:center; gap: 16px; padding: 16px 18px; border-radius: 12px; border:1px solid rgba(251,191,36,.35); background: rgba(251,191,36,.06); }
+  .ring { width: 46px; height: 46px; flex: none; position: relative; }
+  .ring svg { width: 46px; height: 46px; transform: rotate(-90deg); }
+  .ring b { position:absolute; inset:0; display:grid; place-items:center; font-size: 13px; color: var(--warn); }
+  .tvrow { display:grid; grid-template-columns: 1fr auto; gap: 12px; align-items:center; padding: 12px 14px; border-radius: 10px; background: #111319; border:1px solid var(--line); }
+  .tvrow.active { border-color: rgba(255,179,64,.4); }
+  .tvrow .nm { font-weight: 600; display:flex; gap: 8px; align-items:center; }
+  .tvrow .ip { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: #262a33; color: var(--muted); }
+  .pill.ok { background: rgba(52,211,153,.14); color: var(--ok); }
+  .pill.acc { background: rgba(255,179,64,.14); color: var(--accent); }
+  .setrow { display:flex; align-items:center; gap: 14px; }
+  .setrow .txt { flex: 1; }
+  .setrow .t { font-weight: 600; }
+  code.box { display:block; padding: 10px 12px; border-radius: 8px; background: #0a0b0e; border:1px solid var(--line); font-size: 12px; color: #c9cdd6; word-break: break-all; }
+
+  /* ---------- modal / toast ---------- */
+  .modal-back { position: fixed; inset: 0; z-index: 50; background: rgba(5,6,8,.72); display:grid; place-items:center; padding: 30px; }
+  .modal { width: min(520px, 100%); max-height: calc(100vh - 60px); display:flex; flex-direction: column; background: var(--panel); border:1px solid var(--line2); border-radius: 16px; box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+  .modal.wide { width: min(980px, 100%); }
+  .modal-head { display:flex; align-items:center; gap: 10px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+  .modal-head h3 { margin: 0; font-size: 16px; flex: 1; }
+  .modal-body { padding: 20px; overflow: auto; }
+  .modal-foot { display:flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--line); }
+  .pick-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+  .pick { text-align: left; padding: 0; border-radius: 10px; overflow: hidden; border: 2px solid var(--line); background: #111319; position: relative; }
+  .pick .th { aspect-ratio: 16/9; border: 0; }
+  .pick .pn { padding: 8px 10px; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pick.on { border-color: var(--accent); }
+  .pick .ck { position:absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0,0,0,.6); border: 2px solid #fff6; display:grid; place-items:center; font-size: 12px; font-weight: 800; }
+  .pick.on .ck { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .preview-media { width: 100%; max-height: 62vh; border-radius: 10px; background: #000; display:block; }
+  .pin-input { font-size: 26px; letter-spacing: .5em; text-align: center; height: 56px; width: 100%; }
+  #toasts { position: fixed; right: 24px; bottom: 24px; z-index: 60; display:grid; gap: 8px; }
+  .toast { padding: 12px 16px; border-radius: 10px; background: #232733; border:1px solid var(--line2); box-shadow: 0 10px 30px rgba(0,0,0,.4); max-width: 380px; animation: tin .2s ease-out; }
+  .toast.err { background: #3a1d22; border-color: rgba(248,113,113,.4); color: #fecaca; }
+  .toast.ok { border-left: 3px solid var(--ok); }
+  @keyframes tin { from { transform: translateY(8px); opacity: 0; } }
+
+  @media (max-width: 1000px) {
+    .home, .settings, .split { grid-template-columns: 1fr; }
+    .control, .plist { position: static; }
+    main { padding: 18px; }
+    .topbar { padding: 0 16px; }
+    .hide-narrow { display: none !important; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <h1>Bar TV</h1>
 
-  <section class="card">
-    <button class="primary" id="adBtn" onclick="ad()">Ad Break</button>
-    <div class="status" id="status">…</div>
-  </section>
+<header class="topbar">
+  <a class="brand" href="#/"><span class="logo">TV</span><span>BarTV Controller</span></a>
+  <div class="crumbs" id="crumbs"></div>
+  <div class="spacer"></div>
+  <span class="chip hide-narrow" id="chipAd"></span>
+  <span class="chip hide-narrow" id="chipScreens"></span>
+  <button class="chip" id="chipTv" onclick="go('#/settings')"></button>
+  <a class="gear" id="gear" href="#/settings" title="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </a>
+</header>
 
-  <section class="card">
-    <h2>TV</h2>
-    <div class="row two">
-      <button id="inNormal">Live</button>
-      <button id="inSignage">Signage</button>
-    </div>
-    <h2 style="margin-top:6px">Volume <span id="volVal"></span></h2>
-    <input type="range" id="vol" min="0" max="100" value="20">
-    <div class="row two">
-      <button id="muteBtn">Mute</button>
-      <button class="ghost" onclick="post('/api/stop',{},'Stopped')">Stop media</button>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Play on TV</h2>
-    <select id="fileSel"><option value="">— saved files —</option></select>
-    <div class="status" id="fileHint"></div>
-    <input type="url" id="urlIn" placeholder="https://…/video.mp4 (or /media/file)">
-    <select id="kindSel">
-      <option value="video">Video</option>
-      <option value="audio">Audio</option>
-      <option value="image">Image</option>
-    </select>
-    <button onclick="stream()">Play</button>
-  </section>
-
-  <section class="card">
-    <h2>Pairing</h2>
-    <button class="ghost" id="pairBtn" onclick="pair()">Pair TV (accept prompt on remote)</button>
-    <button class="ghost" onclick="resetPin()">Reset saved PIN</button>
-    <div class="status" id="pairHint"></div>
-    <div class="status" id="inputs"></div>
-  </section>
-
-  <section class="card">
-    <h2>Auto ads</h2>
-    <button class="ghost" id="schedBtn">…</button>
-  </section>
-</main>
-
-<div id="pinModal">
-  <div class="card">
-    <h2>Enter PIN</h2>
-    <input type="text" id="pinIn" inputmode="numeric" maxlength="6" placeholder="6-digit PIN">
-    <div class="row two">
-      <button class="ghost" onclick="closePin()">Cancel</button>
-      <button class="primary" onclick="submitPin()">OK</button>
-    </div>
-    <div class="status" id="pinErr" style="color:var(--err)"></div>
-  </div>
-</div>
-
-<div id="toast"></div>
+<main id="view"></main>
+<div id="modals"></div>
+<div id="toasts"></div>
+<div class="drop-overlay" id="dropOverlay" hidden><div>Drop files to add to Assets</div></div>
+<input type="file" id="filePick" multiple accept="video/*,audio/*,image/*,.mkv,.m3u8" hidden>
 
 <script>
-let pin = localStorage.getItem('bartv_pin') || '';
-let state = {};
-const $ = id => document.getElementById(id);
+/* ================= icons ================= */
+const I = {
+  film: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5"/></svg>',
+  layers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 10 6-10 6L2 8z"/><path d="m2 16 10 6 10-6"/></svg>',
+  tv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="13" rx="2"/><path d="M8 21h8"/></svg>',
+  img: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>',
+  music: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>',
+  up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/></svg>',
+  left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="m15 18-6-6 6-6"/></svg>',
+  right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="m9 18 6-6-6-6"/></svg>',
+  ad: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+};
 
-function toast(msg, err) {
-  const t = $('toast');
-  t.textContent = msg; t.className = 'show' + (err ? ' err' : '');
-  clearTimeout(t._h); t._h = setTimeout(() => t.className = '', 2500);
+/* ================= utils ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtSize = b => b < 1024 ? b + ' B' : b < 1048576 ? (b/1024).toFixed(0) + ' KB' : b < 1073741824 ? (b/1048576).toFixed(1) + ' MB' : (b/1073741824).toFixed(2) + ' GB';
+const fmtDur = s => { if (s == null) return ''; s = Math.round(s); const m = Math.floor(s/60), r = s % 60; return m >= 60 ? `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}:${String(r).padStart(2,'0')}` : `${m}:${String(r).padStart(2,'0')}`; };
+const fmtTime = s => s ? new Date(s).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '—';
+const go = h => { location.hash = h; };
+
+function toast(msg, kind) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + (kind || '');
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), kind === 'err' ? 4500 : 2600);
 }
 
-function headers() { return {'Content-Type': 'application/json', 'X-Pin': pin}; }
+/* ================= API + PIN ================= */
+let pin = localStorage.getItem('bartv_pin') || '';
 
-async function api(url, body) {
-  const r = await fetch(url, body === undefined ? {} : {method: 'POST', headers: headers(), body: JSON.stringify(body)});
+async function api(method, url, body, {silent} = {}) {
+  const opt = {method, headers: {'X-Pin': pin}};
+  if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const r = await fetch(url, opt);
   const data = await r.json().catch(() => ({}));
   if (r.status === 401) {
-    askPin(() => api(url, body), pin ? 'Wrong PIN - try again' : 'Enter PIN');
-    throw new Error('PIN required');
+    if (silent) throw new Error('PIN required');
+    await askPin(pin ? 'Wrong PIN - try again' : '');
+    return api(method, url, body);
   }
-  if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : r.statusText);
+  if (!r.ok) {
+    const d = data.detail;
+    throw new Error(typeof d === 'string' ? d : Array.isArray(d) ? d.map(x => x.msg).join(', ') : r.statusText);
+  }
   return data;
 }
-async function post(url, body, okMsg) {
-  try { await api(url, body); if (okMsg) toast(okMsg); refresh(); return true; }
-  catch (e) { if (e.message !== 'PIN required') toast(e.message, true); return false; }
+async function act(fn, okMsg) {
+  try { const r = await fn(); if (okMsg) toast(okMsg, 'ok'); return r ?? true; }
+  catch (e) { if (e.message !== 'cancelled') toast(e.message, 'err'); return null; }
 }
 
-let pinResolve = null;
-function askPin(cb, err) { pinResolve = cb; $('pinErr').textContent = err || ''; $('pinModal').className = 'show'; $('pinIn').focus(); }
-function resetPin() { localStorage.removeItem('bartv_pin'); pin = ''; toast('Saved PIN cleared'); }
-function closePin() { $('pinModal').className = ''; pinResolve = null; $('pinErr').textContent = ''; }
-function submitPin() {
-  pin = $('pinIn').value.trim();
-  const cb = pinResolve; closePin(); $('pinIn').value = '';
-  if (cb && pin) { localStorage.setItem('bartv_pin', pin); cb(); }
+function askPin(err) {
+  return new Promise((resolve, reject) => {
+    const m = modal(`
+      <div class="modal-head"><h3>Enter PIN</h3></div>
+      <div class="modal-body" style="display:grid;gap:12px">
+        <div class="muted">The 6-digit PIN is printed in the server console and stored in <code>config.json</code>.</div>
+        <input class="field pin-input" id="pinIn" inputmode="numeric" maxlength="6" autocomplete="off">
+        ${err ? `<div class="err-box">${esc(err)}</div>` : ''}
+      </div>
+      <div class="modal-foot"><button class="btn" data-x>Cancel</button><button class="btn primary" id="pinOk">Unlock</button></div>`,
+      () => reject(new Error('cancelled')));
+    const inp = m.el.querySelector('#pinIn');
+    const ok = () => { const v = inp.value.trim(); if (!v) return; pin = v; localStorage.setItem('bartv_pin', v); m.close(true); resolve(); };
+    m.el.querySelector('#pinOk').onclick = ok;
+    inp.onkeydown = e => { if (e.key === 'Enter') ok(); };
+    setTimeout(() => inp.focus(), 30);
+  });
 }
-$('pinIn').addEventListener('keydown', e => { if (e.key === 'Enter') submitPin(); });
 
-async function ad() { await post('/api/trigger-ad', {}, 'Ad break started'); }
-async function pair() {
-  $('pairBtn').disabled = true; $('pairHint').textContent = 'Accept the prompt on the TV within 60s…';
-  const ok = await post('/api/pair', {}, 'Paired');
-  $('pairBtn').disabled = false;
-  $('pairHint').textContent = ok ? '' : 'Pairing failed or timed out';
+/* ================= modal helper ================= */
+function modal(html, onCancel, cls = '') {
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `<div class="modal ${cls}">${html}</div>`;
+  $('#modals').appendChild(back);
+  const m = {
+    el: back,
+    close(silent) { back.remove(); document.removeEventListener('keydown', onKey); if (!silent && onCancel) onCancel(); },
+  };
+  const onKey = e => { if (e.key === 'Escape') m.close(); };
+  document.addEventListener('keydown', onKey);
+  back.addEventListener('mousedown', e => { if (e.target === back) m.close(); });
+  back.querySelectorAll('[data-x]').forEach(b => b.onclick = () => m.close());
+  return m;
 }
-function stream() {
-  const url = $('fileSel').value || $('urlIn').value.trim();
-  if (!url) { toast('Pick a file or paste a URL', true); return; }
-  post('/api/stream', {url, kind: $('kindSel').value}, 'Playing on TV');
+function confirmBox(title, text, okLabel = 'Delete', danger = true) {
+  return new Promise(resolve => {
+    const m = modal(`
+      <div class="modal-head"><h3>${esc(title)}</h3></div>
+      <div class="modal-body muted">${text}</div>
+      <div class="modal-foot"><button class="btn" data-x>Cancel</button><button class="btn ${danger ? 'danger' : 'primary'}" id="cOk">${esc(okLabel)}</button></div>`,
+      () => resolve(false));
+    m.el.querySelector('#cOk').onclick = () => { m.close(true); resolve(true); };
+  });
 }
-$('fileSel').onchange = () => { if ($('fileSel').value) $('urlIn').value = $('fileSel').value; };
-$('inNormal').onclick = () => post('/api/input', {input: state.normal_input}, 'Live');
-$('inSignage').onclick = () => post('/api/input', {input: state.signage_input}, 'Signage');
-$('muteBtn').onclick = async () => { const m = !$('muteBtn').dataset.m; $('muteBtn').dataset.m = m; $('muteBtn').textContent = m ? 'Unmute' : 'Mute'; await post('/api/mute', {mute: m}, m ? 'Muted' : 'Unmuted'); };
-$('schedBtn').onclick = async () => { await post('/api/scheduler', {enabled: !state.scheduler_enabled}, state.scheduler_enabled ? 'Auto ads paused' : 'Auto ads on'); };
-const vol = $('vol');
-vol.oninput = () => $('volVal').textContent = vol.value;
-vol.onchange = () => post('/api/volume', {level: +vol.value});
-$('volVal').textContent = vol.value;
 
-async function loadFiles() {
+/* ================= state ================= */
+const S = { status: null, assets: [], programs: [], route: '', assetFilter: 'all', assetQuery: '', selProgram: null, draft: null, pairStarted: null, discovered: null, scanning: false };
+const assetMap = () => Object.fromEntries(S.assets.map(a => [a.file, a]));
+
+async function loadStatus() {
+  try { S.status = await (await fetch('/api/status')).json(); }
+  catch { S.status = null; }
+  renderTopbar();
+  if (S.route === 'home') renderControlPanel();
+  if (S.route === 'settings') renderSettings();
+}
+async function loadAssets() {
+  try { S.assets = (await (await fetch('/api/assets')).json()).assets; } catch {}
+  backfillThumbs();
+}
+async function loadPrograms() {
+  try { S.programs = (await (await fetch('/api/programs')).json()).programs; } catch {}
+}
+
+/* ================= top bar ================= */
+function tvState(s) {
+  if (!s) return {dot: 'err', text: 'Server offline'};
+  if (s.pairing) return {dot: 'warn pulse', text: 'Pairing… accept on TV'};
+  if (s.mock_tv) return {dot: s.paired ? 'ok' : 'warn', text: s.paired ? 'Demo TV connected' : 'Demo TV · not paired'};
+  const tv = (s.tvs || []).find(t => t.active);
+  const name = tv ? tv.name : 'TV';
+  return s.paired ? {dot: 'ok', text: `${name} connected`} : {dot: 'err', text: `${name} not paired`};
+}
+function renderTopbar() {
+  const s = S.status, st = tvState(s);
+  $('#chipTv').innerHTML = `<span class="dot ${st.dot}"></span><b>${esc(st.text)}</b>${s && !s.mock_tv ? `<span>${esc(s.tv_ip)}</span>` : ''}`;
+  if (s) {
+    $('#chipScreens').innerHTML = `<span class="dot ${s.displays_connected ? 'ok' : ''}"></span>${s.displays_connected} screen${s.displays_connected === 1 ? '' : 's'}`;
+    $('#chipAd').innerHTML = s.ad_running ? `<span class="dot warn pulse"></span><b>Ad playing</b>` :
+      `Next ad <b>${s.scheduler_enabled ? fmtTime(s.next_ad) : 'paused'}</b>`;
+  }
+  const crumbs = {assets: 'Assets', programs: 'Programs', settings: 'Settings'}[S.route];
+  $('#crumbs').innerHTML = crumbs ? `${I.right}<b>${crumbs}</b>` : '';
+  $('#gear').classList.toggle('active', S.route === 'settings');
+}
+
+/* ================= thumbnails ================= */
+function makeThumb(src, kind) {
+  return new Promise(resolve => {
+    const W = 384, H = 216;
+    const draw = (el, w, h) => {
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+      const sc = Math.max(W / w, H / h), dw = w * sc, dh = h * sc;
+      g.drawImage(el, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      try { return c.toDataURL('image/jpeg', 0.74); } catch { return null; }
+    };
+    const t = setTimeout(() => resolve({}), 12000);
+    if (kind === 'image') {
+      const im = new Image();
+      im.onload = () => { clearTimeout(t); resolve({thumb: draw(im, im.naturalWidth, im.naturalHeight)}); };
+      im.onerror = () => { clearTimeout(t); resolve({}); };
+      im.src = src;
+      return;
+    }
+    const v = document.createElement(kind === 'audio' ? 'audio' : 'video');
+    v.muted = true; v.preload = 'metadata'; v.playsInline = true;
+    v.onloadedmetadata = () => {
+      if (kind === 'audio') { clearTimeout(t); resolve({duration: v.duration}); return; }
+      v.currentTime = Math.min(Math.max(v.duration * 0.2, 0.5), 8);
+    };
+    v.onseeked = () => { clearTimeout(t); resolve({thumb: draw(v, v.videoWidth, v.videoHeight), duration: v.duration}); };
+    v.onerror = () => { clearTimeout(t); resolve({}); };
+    v.src = src;
+  });
+}
+let backfilling = false;
+async function backfillThumbs() {
+  if (backfilling || !pin) return;
+  backfilling = true;
   try {
-    const d = await (await fetch('/api/files')).json();
-    $('fileSel').innerHTML = '<option value="">— saved files —</option>' + d.files.map(f =>
-      `<option value="${f.url}">${f.name}</option>`).join('');
-  } catch {}
+    for (const a of S.assets) {
+      const needThumb = !a.thumb && (a.kind === 'video' || a.kind === 'image');
+      const needDur = a.duration == null && (a.kind === 'video' || a.kind === 'audio');
+      if (!needThumb && !needDur) continue;
+      const r = await makeThumb(a.url, a.kind);
+      if (!r.thumb && r.duration == null) continue;
+      try {
+        const upd = await api('PATCH', '/api/assets/' + encodeURIComponent(a.file), {thumb: r.thumb || undefined, duration: isFinite(r.duration) ? r.duration : undefined}, {silent: true});
+        Object.assign(a, upd);
+        refreshAssetViews();
+      } catch { break; }
+    }
+  } finally { backfilling = false; }
+}
+function refreshAssetViews() {
+  if (S.route === 'assets') renderAssetGrid();
+  else if (S.route === 'home') renderHomeTiles();
+  else if (S.route === 'programs') renderEditor();
+}
+function thumbHtml(a, cls = '') {
+  if (!a) return `<div class="th ${cls}">${I.x}</div>`;
+  const icon = a.kind === 'audio' ? I.music : a.kind === 'image' ? I.img : I.film;
+  const bg = a.thumb ? ` style="background-image:url('${a.thumb}')"` : '';
+  return `<div class="th ${a.kind === 'audio' ? 'audio' : ''} ${cls}"${bg}>${a.thumb ? '' : icon}</div>`;
 }
 
-async function refresh() {
-  try { state = await (await fetch('/api/status')).json(); } catch { $('status').innerHTML = 'Server unreachable'; return; }
-  const t = s => s ? new Date(s).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—';
-  $('status').innerHTML = `
-    <div><span class="dot ${state.paired ? 'on' : ''}"></span>TV ${state.paired ? 'paired' : 'not paired'} · ${state.displays_connected} screen${state.displays_connected === 1 ? '' : 's'}${state.mock_tv ? ' · mock' : ''}</div>
-    <div>${state.ad_running ? '<b>Ad playing…</b>' : 'Next auto ad: ' + (state.scheduler_enabled ? t(state.next_ad) : 'paused') + ' · Last: ' + t(state.last_ad)}</div>
-    ${state.promo_exists === false ? '<div style="color:var(--err)">No promo video - drop an mp4 into static/media/</div>' : ''}
-    ${state.last_error ? `<div style="color:var(--err)">${state.last_error}</div>` : ''}`;
-  $('inputs').textContent = state.tv_inputs && state.tv_inputs.length ? 'TV inputs: ' + state.tv_inputs.join(', ') : '';
-  $('adBtn').disabled = state.ad_running;
-  $('schedBtn').textContent = state.scheduler_enabled ? 'Pause auto ads' : 'Auto ads every 30m';
-  $('inNormal').textContent = 'Live (' + state.normal_input + ')';
-  $('inSignage').textContent = 'Signage (' + state.signage_input + ')';
+/* ================= router ================= */
+function route() {
+  const h = location.hash.replace(/^#\/?/, '');
+  const [name, arg] = h.split('/');
+  S.route = ['assets', 'programs', 'settings'].includes(name) ? name : 'home';
+  if (S.route === 'programs' && arg) S.selProgram = decodeURIComponent(arg);
+  renderTopbar();
+  ({home: renderHome, assets: renderAssets, programs: renderPrograms, settings: renderSettings})[S.route]();
+  window.scrollTo(0, 0);
 }
-refresh(); loadFiles();
-setInterval(refresh, 5000);
+window.addEventListener('hashchange', () => {
+  if (S.route === 'programs' && isDirty() && !confirm('Discard unsaved program changes?')) {
+    history.replaceState(null, '', '#/programs/' + encodeURIComponent(S.selProgram)); return;
+  }
+  route();
+});
+
+/* ================= HOME ================= */
+function renderHome() {
+  $('#view').innerHTML = `
+    <div class="home">
+      <div class="tiles" id="tiles"></div>
+      <aside class="panel panel-pad control" id="control"></aside>
+    </div>`;
+  renderHomeTiles();
+  renderControlPanel();
+}
+function renderHomeTiles() {
+  const el = $('#tiles'); if (!el) return;
+  const recent = [...S.assets].slice(0, 6);
+  const counts = {video: 0, image: 0, audio: 0};
+  S.assets.forEach(a => counts[a.kind] = (counts[a.kind] || 0) + 1);
+  el.innerHTML = `
+    <a class="tile" href="#/assets">
+      <div class="tile-head">
+        <div class="tile-icon assets">${I.film}</div>
+        <div><h2>ASSETS</h2><p>${S.assets.length} item${S.assets.length === 1 ? '' : 's'} · ${counts.video} video · ${counts.image} image · ${counts.audio} audio</p></div>
+        <span class="open">Manage ${I.right}</span>
+      </div>
+      <div class="tile-body">
+        ${recent.length ? `<div class="strip">${recent.map(a => thumbHtml(a)).join('')}${Array(Math.max(0, 6 - recent.length)).fill('<div class="th" style="border-style:dashed;opacity:.4"></div>').join('')}</div>`
+          : `<div class="empty-line">No media yet - open Assets to upload videos, images and audio.</div>`}
+      </div>
+    </a>
+    <a class="tile" href="#/programs">
+      <div class="tile-head">
+        <div class="tile-icon programs">${I.layers}</div>
+        <div><h2>PROGRAMS</h2><p>${S.programs.length} program${S.programs.length === 1 ? '' : 's'} · what to show and which commercials run on top</p></div>
+        <span class="open">Manage ${I.right}</span>
+      </div>
+      <div class="tile-body">
+        ${S.programs.length ? `<div class="prog-chips">${S.programs.map(p => `<span class="prog-chip">${esc(p.name)}<span>${progSummary(p)}</span></span>`).join('')}</div>`
+          : `<div class="empty-line">No programs yet.</div>`}
+      </div>
+    </a>`;
+}
+function progSummary(p) {
+  const base = p.base === 'tv' ? 'TV' : `${p.content.length} clip${p.content.length === 1 ? '' : 's'}`;
+  return `${base} + ${p.commercials.length} ad${p.commercials.length === 1 ? '' : 's'}`;
+}
+let volTimer = null;
+function renderControlPanel() {
+  const el = $('#control'); if (!el) return;
+  const s = S.status;
+  if (!s) { el.innerHTML = `<div class="err-box">Server unreachable - is start.bat running?</div>`; return; }
+  if (el.dataset.ready) { updateControlPanel(); return; }
+  el.dataset.ready = '1';
+  el.innerHTML = `
+    <div class="label">Live control</div>
+    <button class="btn primary lg" id="adBtn">${I.ad} Play ad break now</button>
+    <div id="ctlNotes" style="display:grid;gap:8px"></div>
+    <div class="sep"></div>
+    <div style="display:grid;gap:8px">
+      <div class="label">TV input</div>
+      <div class="seg" id="inputSeg"><button data-in="normal">Live TV</button><button data-in="signage">Signage</button></div>
+    </div>
+    <div style="display:grid;gap:8px">
+      <div class="label">Volume</div>
+      <div class="vol-row"><input type="range" id="vol" min="0" max="100" value="20"><output id="volOut">20</output>
+        <button class="btn sm" id="muteBtn">Mute</button></div>
+    </div>
+    <button class="btn" id="stopBtn">Stop media on screen</button>
+    <div class="sep"></div>
+    <div class="setrow">
+      <div class="txt"><div class="t">Auto ad breaks</div><div class="muted small" id="schedTxt"></div></div>
+      <label class="switch"><input type="checkbox" id="schedSw"><span></span></label>
+    </div>`;
+  $('#adBtn').onclick = () => act(() => api('POST', '/api/trigger-ad', {}), 'Ad break started').then(loadStatus);
+  el.querySelectorAll('#inputSeg button').forEach(b => b.onclick = () => {
+    const input = b.dataset.in === 'normal' ? S.status.normal_input : S.status.signage_input;
+    act(() => api('POST', '/api/input', {input}), 'Switched to ' + input);
+  });
+  const vol = $('#vol');
+  vol.oninput = () => { $('#volOut').textContent = vol.value; clearTimeout(volTimer); volTimer = setTimeout(() => act(() => api('POST', '/api/volume', {level: +vol.value})), 250); };
+  $('#muteBtn').onclick = () => {
+    const m = $('#muteBtn').dataset.m !== '1';
+    act(() => api('POST', '/api/mute', {mute: m})).then(r => { if (r) { $('#muteBtn').dataset.m = m ? '1' : ''; $('#muteBtn').textContent = m ? 'Unmute' : 'Mute'; } });
+  };
+  $('#stopBtn').onclick = () => act(() => api('POST', '/api/stop', {}), 'Stopped');
+  $('#schedSw').onchange = e => act(() => api('POST', '/api/scheduler', {enabled: e.target.checked}), e.target.checked ? 'Auto ads on' : 'Auto ads paused').then(loadStatus);
+  updateControlPanel();
+}
+function updateControlPanel() {
+  const s = S.status; if (!s || !$('#adBtn')) return;
+  $('#adBtn').disabled = s.ad_running;
+  $('#adBtn').innerHTML = s.ad_running ? `${I.ad} Ad break playing…` : `${I.ad} Play ad break now`;
+  const notes = [];
+  if (!s.paired) notes.push(`<div class="warn-box">TV not paired - <a href="#/settings">connect it in Settings</a>.</div>`);
+  if (!s.promo_exists) notes.push(`<div class="warn-box">Promo video missing (<code>static/media/promo.mp4</code>).</div>`);
+  if (s.last_error) notes.push(`<div class="err-box">${esc(s.last_error)}</div>`);
+  $('#ctlNotes').innerHTML = notes.join('');
+  $('#schedSw').checked = s.scheduler_enabled;
+  $('#schedTxt').textContent = s.scheduler_enabled ? `Every ${s.ad_interval_minutes} min · next ${fmtTime(s.next_ad)} · last ${fmtTime(s.last_ad)}` : 'Paused';
+  const seg = document.querySelectorAll('#inputSeg button');
+  seg[0].textContent = `Live TV · ${s.normal_input}`; seg[1].textContent = `Signage · ${s.signage_input}`;
+}
+
+/* ================= ASSETS ================= */
+function renderAssets() {
+  $('#view').innerHTML = `
+    <div class="view-head">
+      <a class="back" href="#/">${I.left}</a>
+      <div><h1>Assets</h1><div class="sub">Videos, images and audio available to programs and the TV screen</div></div>
+      <div class="spacer"></div>
+      <button class="btn primary" onclick="$('#filePick').click()">${I.upload} Add media</button>
+    </div>
+    <div class="toolbar">
+      <input class="field search" id="aq" placeholder="Search assets…" value="${esc(S.assetQuery)}">
+      <div class="seg" id="af">
+        ${['all', 'video', 'image', 'audio'].map(k => `<button data-k="${k}" class="${S.assetFilter === k ? 'on' : ''}">${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}
+      </div>
+      <div class="spacer"></div>
+      <span class="muted small" id="acount"></span>
+    </div>
+    <div class="uploads" id="uploads"></div>
+    <div id="agrid"></div>`;
+  $('#aq').oninput = e => { S.assetQuery = e.target.value; renderAssetGrid(); };
+  document.querySelectorAll('#af button').forEach(b => b.onclick = () => {
+    S.assetFilter = b.dataset.k;
+    document.querySelectorAll('#af button').forEach(x => x.classList.toggle('on', x === b));
+    renderAssetGrid();
+  });
+  renderAssetGrid();
+}
+function filteredAssets() {
+  const q = S.assetQuery.trim().toLowerCase();
+  return S.assets.filter(a => (S.assetFilter === 'all' || a.kind === S.assetFilter) &&
+    (!q || a.name.toLowerCase().includes(q) || a.file.toLowerCase().includes(q)));
+}
+function renderAssetGrid() {
+  const el = $('#agrid'); if (!el) return;
+  if (el.querySelector('.name-input')) return; // don't clobber an in-progress rename
+  const list = filteredAssets();
+  $('#acount').textContent = `${list.length} of ${S.assets.length}`;
+  if (!S.assets.length) {
+    el.innerHTML = `<div class="drop">${I.upload}<h3>Drop media here</h3><div>or click <b>Add media</b> · MP4, WebM, MOV, MKV, JPG, PNG, WebP, MP3, M4A, WAV · up to 1 GB each</div></div>`;
+    return;
+  }
+  if (!list.length) { el.innerHTML = `<div class="empty-rows">No assets match.</div>`; return; }
+  el.innerHTML = `<div class="grid">${list.map(a => `
+    <div class="card" data-f="${esc(a.file)}">
+      <div style="position:relative">
+        ${thumbHtml(a)}
+        <span class="badge tl">${a.kind}</span>
+        ${a.duration != null ? `<span class="badge br">${fmtDur(a.duration)}</span>` : ''}
+        <div class="hover">
+          <button class="btn sm" data-act="preview">${I.eye} Preview</button>
+          <button class="btn sm primary" data-act="cast">${I.play} Show on TV</button>
+        </div>
+      </div>
+      <div class="info">
+        <div class="txt">
+          <div class="name" data-act="rename" title="Click to rename">${esc(a.name)}</div>
+          <div class="meta">${fmtSize(a.size)}${a.added ? ' · added ' + new Date(a.added).toLocaleDateString() : ''}</div>
+          <div class="file" title="${esc(a.file)}">${esc(a.file)}</div>
+        </div>
+        <div class="acts">
+          <button class="icon-btn" data-act="rename" title="Rename">${I.edit}</button>
+          <button class="icon-btn danger" data-act="delete" title="Delete">${I.trash}</button>
+        </div>
+      </div>
+    </div>`).join('')}</div>`;
+  el.querySelectorAll('[data-act]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const card = b.closest('.card'), a = S.assets.find(x => x.file === card.dataset.f);
+    ({preview: previewAsset, cast: castAsset, rename: () => startRename(card, a), delete: deleteAsset})[b.dataset.act](a);
+  });
+}
+function startRename(card, a) {
+  const nameEl = card.querySelector('.name');
+  const inp = document.createElement('input');
+  inp.className = 'field name-input'; inp.value = a.name; inp.maxLength = 80;
+  nameEl.replaceWith(inp); inp.focus(); inp.select();
+  let done = false;
+  const finish = async save => {
+    if (done) return; done = true;
+    const v = inp.value.trim();
+    if (save && v && v !== a.name) {
+      const upd = await act(() => api('PATCH', '/api/assets/' + encodeURIComponent(a.file), {name: v}), 'Renamed');
+      if (upd && upd.file) Object.assign(a, upd);
+    }
+    inp.remove(); renderAssetGrid();
+  };
+  inp.onkeydown = e => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); };
+  inp.onblur = () => finish(true);
+}
+async function deleteAsset(a) {
+  const used = S.programs.filter(p => p.content.includes(a.file) || p.commercials.includes(a.file));
+  const ok = await confirmBox('Delete asset?', `<b>${esc(a.name)}</b> (${esc(a.file)}) will be removed from disk${used.length ? ` and from ${used.length} program${used.length === 1 ? '' : 's'}: ${used.map(p => esc(p.name)).join(', ')}` : ''}.`);
+  if (!ok) return;
+  if (await act(() => api('DELETE', '/api/assets/' + encodeURIComponent(a.file)), 'Deleted')) {
+    await Promise.all([loadAssets(), loadPrograms()]);
+    renderAssetGrid();
+  }
+}
+function previewAsset(a) {
+  const media = a.kind === 'image' ? `<img class="preview-media" src="${a.url}" style="object-fit:contain">`
+    : a.kind === 'audio' ? `<audio controls autoplay src="${a.url}" style="width:100%"></audio>`
+    : `<video class="preview-media" controls autoplay src="${a.url}"></video>`;
+  const m = modal(`
+    <div class="modal-head"><h3>${esc(a.name)}</h3><button class="icon-btn" data-x>${I.x}</button></div>
+    <div class="modal-body">${media}</div>
+    <div class="modal-foot"><span class="muted small" style="margin-right:auto">${esc(a.file)} · ${fmtSize(a.size)}${a.duration != null ? ' · ' + fmtDur(a.duration) : ''}</span>
+      <button class="btn primary" id="pvCast">${I.play} Show on TV</button></div>`, null, 'wide');
+  m.el.querySelector('#pvCast').onclick = () => { castAsset(a); m.close(true); };
+}
+function castAsset(a) {
+  act(() => api('POST', '/api/stream', {url: a.url, kind: a.kind === 'file' ? 'video' : a.kind, name: a.name}), `Showing “${a.name}” on screen`);
+}
+
+/* ---------- uploads ---------- */
+$('#filePick').onchange = e => { uploadFiles([...e.target.files]); e.target.value = ''; };
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { if (!e.dataTransfer.types.includes('Files')) return; e.preventDefault(); dragDepth++; $('#dropOverlay').hidden = false; });
+window.addEventListener('dragover', e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); });
+window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('#dropOverlay').hidden = true; });
+window.addEventListener('drop', e => {
+  if (!e.dataTransfer.files.length) return;
+  e.preventDefault(); dragDepth = 0; $('#dropOverlay').hidden = true;
+  if (S.route !== 'assets') go('#/assets');
+  setTimeout(() => uploadFiles([...e.dataTransfer.files]), 0);
+});
+
+function xhrPut(url, file, onProg) {
+  return new Promise(resolve => {
+    const x = new XMLHttpRequest();
+    x.open('PUT', url);
+    x.setRequestHeader('X-Pin', pin);
+    x.setRequestHeader('Content-Type', 'application/octet-stream');
+    x.upload.onprogress = e => e.lengthComputable && onProg(e.loaded / e.total);
+    x.onload = () => { let d = {}; try { d = JSON.parse(x.responseText); } catch {} resolve({status: x.status, data: d}); };
+    x.onerror = () => resolve({status: 0, data: {detail: 'Network error'}});
+    x.send(file);
+  });
+}
+async function uploadFiles(files) {
+  if (!files.length) return;
+  if (!pin) { try { await askPin(''); } catch { return; } }
+  for (const file of files) {
+    const row = document.createElement('div');
+    row.className = 'up';
+    row.innerHTML = `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${esc(file.name)}</b> <span class="muted">${fmtSize(file.size)}</span></div><div class="bar"><i></i></div><div class="muted st">0%</div>`;
+    const box = $('#uploads'); if (box) box.appendChild(row);
+    const setP = p => { row.querySelector('i').style.width = (p * 100).toFixed(0) + '%'; row.querySelector('.st').textContent = (p * 100).toFixed(0) + '%'; };
+    let url = '/api/assets/' + encodeURIComponent(file.name);
+    let r = await xhrPut(url, file, setP);
+    if (r.status === 401) { try { await askPin('Wrong PIN - try again'); } catch { row.remove(); continue; } r = await xhrPut(url, file, setP); }
+    if (r.status === 409 && await confirmBox('Replace existing file?', `<b>${esc(file.name)}</b> already exists in Assets. Replace it with the new upload?`, 'Replace', false)) {
+      r = await xhrPut(url + '?replace=true', file, setP);
+    }
+    if (r.status === 200) {
+      setP(1); row.classList.add('done'); row.querySelector('.st').textContent = 'Done';
+      const asset = r.data;
+      const blob = URL.createObjectURL(file);
+      const t = await makeThumb(blob, asset.kind);
+      setTimeout(() => URL.revokeObjectURL(blob), 5000);
+      if (t.thumb || isFinite(t.duration)) {
+        await api('PATCH', '/api/assets/' + encodeURIComponent(asset.file), {thumb: t.thumb || undefined, duration: isFinite(t.duration) ? t.duration : undefined}, {silent: true}).catch(() => {});
+      }
+      await loadAssets();
+      if (S.route === 'assets') renderAssetGrid(); else refreshAssetViews();
+      setTimeout(() => row.remove(), 2500);
+    } else {
+      row.classList.add('fail');
+      row.querySelector('.st').textContent = 'Failed';
+      toast(`${file.name}: ${r.data.detail || 'upload failed'}`, 'err');
+      setTimeout(() => row.remove(), 6000);
+    }
+  }
+}
+
+/* ================= PROGRAMS ================= */
+const isDirty = () => {
+  if (!S.draft) return false;
+  const p = S.programs.find(x => x.id === S.draft.id);
+  if (!p) return false;
+  const pick = o => JSON.stringify([o.name, o.base, o.content, o.commercials]);
+  return pick(p) !== pick(S.draft);
+};
+function renderPrograms() {
+  if (!S.programs.find(p => p.id === S.selProgram)) S.selProgram = S.programs[0]?.id || null;
+  const p = S.programs.find(x => x.id === S.selProgram);
+  S.draft = p ? JSON.parse(JSON.stringify(p)) : null;
+  $('#view').innerHTML = `
+    <div class="view-head">
+      <a class="back" href="#/">${I.left}</a>
+      <div><h1>Programs</h1><div class="sub">A program is a package: the base content to show, plus the pool of commercials that run on top</div></div>
+    </div>
+    <div class="split">
+      <div class="panel plist" id="plist"></div>
+      <div class="panel" id="editor"></div>
+    </div>`;
+  renderProgramList();
+  renderEditor();
+}
+function renderProgramList() {
+  const el = $('#plist'); if (!el) return;
+  el.innerHTML = `
+    <div class="head"><span class="label">${S.programs.length} program${S.programs.length === 1 ? '' : 's'}</span>
+      <button class="btn sm primary" id="newProg">${I.plus} New</button></div>
+    ${S.programs.map(p => `
+      <button class="pitem ${p.id === S.selProgram ? 'on' : ''}" data-id="${esc(p.id)}">
+        <span class="pi ${p.base === 'tv' ? 'tv' : ''}">${p.base === 'tv' ? I.tv : I.layers}</span>
+        <span style="min-width:0"><div class="t">${esc(p.name)}</div><div class="s">${progSummary(p)}</div></span>
+      </button>`).join('')}`;
+  el.querySelectorAll('.pitem').forEach(b => b.onclick = () => {
+    if (b.dataset.id === S.selProgram) return;
+    if (isDirty() && !confirm('Discard unsaved changes?')) return;
+    S.draft = null;
+    go('#/programs/' + encodeURIComponent(b.dataset.id));
+  });
+  $('#newProg').onclick = newProgram;
+}
+async function newProgram() {
+  if (isDirty() && !confirm('Discard unsaved changes?')) return;
+  const m = modal(`
+    <div class="modal-head"><h3>New program</h3></div>
+    <div class="modal-body" style="display:grid;gap:14px">
+      <input class="field" id="npName" placeholder="e.g. MMA Package" maxlength="80" style="height:44px;font-size:15px">
+      <div class="label">Base layer</div>
+      <div class="seg" id="npBase" style="width:max-content"><button data-b="content" class="on">Our content (playlist)</button><button data-b="tv">Regular TV</button></div>
+      <div class="muted small" id="npHint">Plays your selected assets; commercials interrupt and then the playlist continues.</div>
+    </div>
+    <div class="modal-foot"><button class="btn" data-x>Cancel</button><button class="btn primary" id="npOk">Create</button></div>`);
+  let base = 'content';
+  m.el.querySelectorAll('#npBase button').forEach(b => b.onclick = () => {
+    base = b.dataset.b;
+    m.el.querySelectorAll('#npBase button').forEach(x => x.classList.toggle('on', x === b));
+    m.el.querySelector('#npHint').textContent = base === 'tv' ? 'Shows the live TV input; commercials interrupt it, then it switches back to TV.' : 'Plays your selected assets; commercials interrupt and then the playlist continues.';
+  });
+  const inp = m.el.querySelector('#npName');
+  setTimeout(() => inp.focus(), 30);
+  const ok = async () => {
+    const name = inp.value.trim(); if (!name) { inp.focus(); return; }
+    const p = await act(() => api('POST', '/api/programs', {name, base}), 'Program created');
+    if (!p) return;
+    m.close(true);
+    await loadPrograms(); S.draft = null;
+    go('#/programs/' + encodeURIComponent(p.id));
+    if (location.hash === '#/programs/' + encodeURIComponent(p.id)) route();
+  };
+  m.el.querySelector('#npOk').onclick = ok;
+  inp.onkeydown = e => { if (e.key === 'Enter') ok(); };
+}
+function renderEditor() {
+  const el = $('#editor'); if (!el) return;
+  const d = S.draft;
+  if (!d) { el.innerHTML = `<div class="editor"><div class="empty-rows">No program selected. Create one with <b>New</b>.</div></div>`; return; }
+  const am = assetMap();
+  const total = list => list.reduce((t, f) => t + (am[f]?.duration || 0), 0);
+  const rows = (key) => d[key].length ? `<div class="rows">${d[key].map((f, i) => {
+      const a = am[f];
+      return `<div class="rowi">
+        <span class="n">${i + 1}</span>${thumbHtml(a)}
+        <div style="min-width:0"><div class="nm ${a ? '' : 'missing'}">${a ? esc(a.name) : 'Missing: ' + esc(f)}</div><div class="d">${a ? a.kind + (a.duration != null ? ' · ' + fmtDur(a.duration) : '') : 'file was deleted'}</div></div>
+        <div class="ops">
+          <button class="icon-btn" data-op="up" data-k="${key}" data-i="${i}" ${i === 0 ? 'disabled' : ''} title="Move up">${I.up}</button>
+          <button class="icon-btn" data-op="down" data-k="${key}" data-i="${i}" ${i === d[key].length - 1 ? 'disabled' : ''} title="Move down">${I.down}</button>
+        </div>
+        <button class="icon-btn danger" data-op="rm" data-k="${key}" data-i="${i}" title="Remove">${I.x}</button>
+      </div>`;
+    }).join('')}</div>` : `<div class="empty-rows">Nothing added yet.</div>`;
+  el.innerHTML = `
+    <div class="editor">
+      <div style="display:grid;gap:8px">
+        <div class="label">Program name</div>
+        <input class="field namefield" id="pName" value="${esc(d.name)}" maxlength="80">
+      </div>
+      <div style="display:grid;gap:8px">
+        <div class="label">Base layer</div>
+        <div class="seg" id="pBase" style="width:max-content">
+          <button data-b="tv" class="${d.base === 'tv' ? 'on' : ''}">Regular TV</button>
+          <button data-b="content" class="${d.base === 'content' ? 'on' : ''}">Our content (playlist)</button>
+        </div>
+      </div>
+      <div>
+        <div class="section-head"><span class="label">Content${d.base === 'content' ? ` · ${d.content.length} item${d.content.length === 1 ? '' : 's'} · ${fmtDur(total(d.content)) || '0:00'}` : ''}</span>
+          ${d.base === 'content' ? `<button class="btn sm" data-add="content">${I.plus} Add from assets</button>` : ''}</div>
+        ${d.base === 'tv' ? `<div class="tv-base">${I.tv}<div><b>Regular TV feed</b><div class="muted small">Shows the live TV input (${esc(S.status?.normal_input || 'HDMI_1')}). Commercials interrupt it on the signage input, then the TV switches back.</div></div></div>` : rows('content')}
+      </div>
+      <div>
+        <div class="section-head"><span class="label">Commercials pool · ${d.commercials.length} ad${d.commercials.length === 1 ? '' : 's'}</span>
+          <button class="btn sm" data-add="commercials">${I.plus} Add from assets</button></div>
+        ${rows('commercials')}
+        <div class="muted small" style="margin-top:8px">Scheduling rules (how many per hour, random picks) come in the next build.</div>
+      </div>
+      <div class="editor-foot">
+        <button class="btn danger" id="pDel">${I.trash} Delete program</button>
+        <div class="spacer"></div>
+        <span class="muted small" id="dirtyTxt"></span>
+        <button class="btn" id="pDiscard">Discard</button>
+        <button class="btn primary" id="pSave">Save changes</button>
+      </div>
+    </div>`;
+  const syncDirty = () => {
+    const dirty = isDirty();
+    $('#pSave').disabled = !dirty; $('#pDiscard').disabled = !dirty;
+    $('#dirtyTxt').textContent = dirty ? 'Unsaved changes' : 'All changes saved';
+  };
+  $('#pName').oninput = e => { d.name = e.target.value; syncDirty(); };
+  el.querySelectorAll('#pBase button').forEach(b => b.onclick = () => { d.base = b.dataset.b; renderEditor(); });
+  el.querySelectorAll('[data-op]').forEach(b => b.onclick = () => {
+    const list = d[b.dataset.k], i = +b.dataset.i;
+    if (b.dataset.op === 'rm') list.splice(i, 1);
+    else { const j = b.dataset.op === 'up' ? i - 1 : i + 1; [list[i], list[j]] = [list[j], list[i]]; }
+    renderEditor();
+  });
+  el.querySelectorAll('[data-add]').forEach(b => b.onclick = () => pickAssets(b.dataset.add));
+  $('#pSave').onclick = saveProgram;
+  $('#pDiscard').onclick = () => { S.draft = JSON.parse(JSON.stringify(S.programs.find(p => p.id === d.id))); renderEditor(); };
+  $('#pDel').onclick = async () => {
+    if (!await confirmBox('Delete program?', `<b>${esc(d.name)}</b> will be deleted. Assets stay in the library.`)) return;
+    if (await act(() => api('DELETE', '/api/programs/' + encodeURIComponent(d.id)), 'Program deleted')) {
+      await loadPrograms(); S.draft = null; S.selProgram = null;
+      if (location.hash === '#/programs') route(); else go('#/programs');
+    }
+  };
+  syncDirty();
+}
+async function saveProgram() {
+  const d = S.draft;
+  if (!d.name.trim()) { toast('Program needs a name', 'err'); return; }
+  const r = await act(() => api('PATCH', '/api/programs/' + encodeURIComponent(d.id), {name: d.name.trim(), base: d.base, content: d.content, commercials: d.commercials}), 'Saved');
+  if (!r) return;
+  await loadPrograms();
+  S.draft = JSON.parse(JSON.stringify(S.programs.find(p => p.id === d.id)));
+  renderProgramList(); renderEditor();
+}
+function pickAssets(key) {
+  const sel = [];
+  let filter = key === 'commercials' ? 'video' : 'all';
+  const m = modal(`
+    <div class="modal-head"><h3>Add to ${key === 'content' ? 'content' : 'commercials pool'}</h3>
+      <div class="seg" id="pkF">${['all', 'video', 'image', 'audio'].map(k => `<button data-k="${k}" class="${k === filter ? 'on' : ''}">${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div>
+      <button class="icon-btn" data-x>${I.x}</button></div>
+    <div class="modal-body"><div id="pkGrid"></div></div>
+    <div class="modal-foot"><a class="btn ghost" href="#/assets" style="margin-right:auto;text-decoration:none">Upload new media…</a>
+      <button class="btn" data-x>Cancel</button><button class="btn primary" id="pkOk" disabled>Add</button></div>`, null, 'wide');
+  const draw = () => {
+    const list = S.assets.filter(a => filter === 'all' || a.kind === filter);
+    m.el.querySelector('#pkGrid').innerHTML = list.length ? `<div class="pick-grid">${list.map(a => {
+      const n = sel.indexOf(a.file);
+      return `<button class="pick ${n >= 0 ? 'on' : ''}" data-f="${esc(a.file)}">${thumbHtml(a)}<span class="ck">${n >= 0 ? n + 1 : ''}</span>
+        <div class="pn">${esc(a.name)}</div><div class="muted small" style="padding:0 10px 8px">${a.kind}${a.duration != null ? ' · ' + fmtDur(a.duration) : ''}</div></button>`;
+    }).join('')}</div>` : `<div class="empty-rows">No ${filter === 'all' ? '' : filter + ' '}assets yet.</div>`;
+    m.el.querySelectorAll('.pick').forEach(b => b.onclick = () => {
+      const i = sel.indexOf(b.dataset.f);
+      i >= 0 ? sel.splice(i, 1) : sel.push(b.dataset.f);
+      draw();
+    });
+    const ok = m.el.querySelector('#pkOk');
+    ok.disabled = !sel.length; ok.textContent = sel.length ? `Add ${sel.length}` : 'Add';
+  };
+  m.el.querySelectorAll('#pkF button').forEach(b => b.onclick = () => {
+    filter = b.dataset.k; m.el.querySelectorAll('#pkF button').forEach(x => x.classList.toggle('on', x === b)); draw();
+  });
+  m.el.querySelector('#pkOk').onclick = () => { S.draft[key].push(...sel); m.close(true); renderEditor(); };
+  m.el.querySelector('a[href="#/assets"]').onclick = () => m.close(true);
+  draw();
+}
+
+/* ================= SETTINGS ================= */
+const PAIR_SECONDS = 60;
+function renderSettings() {
+  const s = S.status;
+  const v = $('#view');
+  if (!v.querySelector('#settingsRoot')) {
+    v.innerHTML = `
+      <div class="view-head">
+        <a class="back" href="#/">${I.left}</a>
+        <div><h1>Settings</h1><div class="sub">TV connection, ad schedule and this device</div></div>
+      </div>
+      <div class="settings" id="settingsRoot">
+        <div class="col"><div class="panel tvhero" id="tvHero"></div><div class="panel panel-pad" id="tvList"></div></div>
+        <div class="col" id="sideCol"></div>
+      </div>`;
+  }
+  if (!s) { $('#tvHero').innerHTML = `<div class="err-box">Server unreachable.</div>`; return; }
+  renderTvHero(); renderTvList(); renderSide();
+}
+function renderTvHero() {
+  const s = S.status, el = $('#tvHero');
+  const active = (s.tvs || []).find(t => t.active);
+  const name = s.mock_tv ? 'Demo TV (simulated)' : (active?.name || 'LG TV');
+  const step = s.paired ? 3 : s.pairing ? 2 : 1;
+  const scr = s.paired ? 'ok' : s.pairing ? 'wait' : '';
+  const stateTxt = s.paired ? 'Connected and ready' : s.pairing ? 'Waiting for you to accept on the TV' : 'Not paired';
+  let remain = PAIR_SECONDS;
+  if (s.pairing) { if (!S.pairStarted) S.pairStarted = Date.now(); remain = Math.max(0, PAIR_SECONDS - Math.floor((Date.now() - S.pairStarted) / 1000)); }
+  else S.pairStarted = null;
+  const C = 2 * Math.PI * 20;
+  el.innerHTML = `
+    <div class="top">
+      <div class="scr ${scr}">${I.tv}</div>
+      <div style="flex:1;min-width:0">
+        <h2>${esc(name)}</h2>
+        <div class="muted">${s.mock_tv ? 'Demo mode - no real TV is controlled' : esc(s.tv_ip)} · <span style="color:${s.paired ? 'var(--ok)' : s.pairing ? 'var(--warn)' : 'var(--err)'}">${stateTxt}</span></div>
+      </div>
+      ${s.pairing ? `<button class="btn danger" id="pairCancel">${I.x} Cancel pairing</button>`
+        : s.paired ? `<button class="btn" id="pairBtn">Re-pair</button><button class="btn danger" id="unpairBtn">Unpair</button>`
+        : `<button class="btn primary lg" id="pairBtn">${I.tv} Pair this TV</button>`}
+    </div>
+    <div class="steps">
+      <div class="step ${step > 1 ? 'done' : 'cur'}"><i>${step > 1 ? '✓' : '1'}</i>Choose TV &amp; press Pair</div>
+      <div class="step ${step > 2 ? 'done' : step === 2 ? 'cur' : ''}"><i>${step > 2 ? '✓' : '2'}</i>Accept prompt on TV remote</div>
+      <div class="step ${step === 3 ? 'done' : ''}"><i>${step === 3 ? '✓' : '3'}</i>Connected</div>
+    </div>
+    ${s.pairing ? `<div class="pairing-box">
+        <div class="ring"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="20" stroke="#3a3420" stroke-width="4" fill="none"/>
+          <circle cx="23" cy="23" r="20" stroke="var(--warn)" stroke-width="4" fill="none" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - remain / PAIR_SECONDS)}"/></svg><b>${remain}</b></div>
+        <div><b>Look at the TV now.</b><div class="muted small">It shows “Allow this device to access the TV?”. Press <b>Accept</b> / <b>OK</b> on the remote within ${PAIR_SECONDS} seconds.</div></div>
+      </div>` : ''}
+    ${!s.pairing && s.pair_error && s.pair_error !== 'cancelled' ? `<div class="err-box">Last pairing attempt failed: ${esc(s.pair_error)}</div>` : ''}
+    ${s.paired && s.tv_inputs?.length ? `<div class="muted small">TV reports inputs: <b style="color:var(--text)">${s.tv_inputs.map(esc).join(', ')}</b>${[s.normal_input, s.signage_input].some(i => !s.tv_inputs.includes(i)) ? ` <span style="color:var(--warn)">· configured inputs ${esc(s.normal_input)}/${esc(s.signage_input)} not all found - check config.json</span>` : ''}</div>` : ''}`;
+  const pb = $('#pairBtn');
+  if (pb) pb.onclick = async () => {
+    if (await act(() => api('POST', '/api/pair', {}))) { S.pairStarted = Date.now(); await loadStatus(); }
+  };
+  const pc = $('#pairCancel');
+  if (pc) pc.onclick = async () => { await act(() => api('POST', '/api/pair/cancel', {}), 'Pairing cancelled'); await loadStatus(); };
+  const ub = $('#unpairBtn');
+  if (ub) ub.onclick = async () => {
+    if (!await confirmBox('Unpair TV?', 'The saved pairing key is removed. You will need to accept the prompt on the TV again to reconnect.', 'Unpair')) return;
+    await act(() => api('POST', '/api/unpair', {}), 'Unpaired'); await loadStatus();
+  };
+}
+function renderTvList() {
+  const s = S.status, el = $('#tvList');
+  if (el.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
+  const tvs = s.tvs || [];
+  const disc = S.discovered;
+  el.innerHTML = `
+    <div class="section-head"><span class="label">TVs</span>
+      <button class="btn sm" id="scanBtn" ${S.scanning || s.pairing ? 'disabled' : ''}>${I.search} ${S.scanning ? 'Searching…' : 'Find TVs on network'}</button></div>
+    <div class="rows" style="gap:8px">
+      ${s.mock_tv ? `<div class="tvrow active"><div><div class="nm">Demo TV <span class="pill acc">Active</span> ${s.paired ? '<span class="pill ok">Paired</span>' : ''}</div><div class="ip">Simulated - turn off Demo mode to use a real TV</div></div><div></div></div>` : ''}
+      ${tvs.map(t => `
+        <div class="tvrow ${t.active ? 'active' : ''}">
+          <div><div class="nm">${esc(t.name)} ${t.active ? '<span class="pill acc">Active</span>' : ''} ${t.paired ? '<span class="pill ok">Paired</span>' : '<span class="pill">Not paired</span>'}</div><div class="ip">${esc(t.ip)}</div></div>
+          <div style="display:flex;gap:6px">
+            ${t.active ? '' : `<button class="btn sm" data-use="${esc(t.ip)}" ${s.pairing ? 'disabled' : ''}>Use this TV</button>`}
+            <button class="icon-btn" data-rename="${esc(t.ip)}" data-name="${esc(t.name)}" title="Rename">${I.edit}</button>
+            <button class="icon-btn danger" data-forget="${esc(t.ip)}" title="Forget">${I.trash}</button>
+          </div>
+        </div>`).join('')}
+      ${!tvs.length && !s.mock_tv ? `<div class="empty-rows">No TVs yet.</div>` : ''}
+    </div>
+    ${disc ? `<div style="margin-top:16px">
+      <div class="label" style="margin-bottom:8px">Found on network</div>
+      ${disc.length ? `<div class="rows" style="gap:8px">${disc.map(t => `
+        <div class="tvrow"><div><div class="nm">${esc(t.name)}</div><div class="ip">${esc(t.ip)}</div></div>
+          <button class="btn sm primary" data-use="${esc(t.ip)}" data-name="${esc(t.name)}">Use this TV</button></div>`).join('')}</div>`
+        : `<div class="warn-box">No LG TVs answered. Make sure the TV is on and on the same Wi-Fi as this computer. Guest networks often block devices from seeing each other - add the TV by IP below (TV: Settings → General → Network → Wi-Fi → Advanced).</div>`}
+    </div>` : ''}
+    <div style="margin-top:16px">
+      <div class="label" style="margin-bottom:8px">Add TV by IP</div>
+      <div style="display:flex;gap:8px">
+        <input class="field" id="addIp" placeholder="192.168.1.150" style="flex:1">
+        <input class="field" id="addName" placeholder="Name (e.g. Bar TV)" style="flex:1">
+        <button class="btn" id="addBtn" ${s.pairing ? 'disabled' : ''}>Add &amp; select</button>
+      </div>
+    </div>`;
+  $('#scanBtn').onclick = async () => {
+    S.scanning = true; renderTvList();
+    try { S.discovered = (await (await fetch('/api/tv/discover')).json()).tvs; } catch { S.discovered = []; }
+    S.scanning = false; renderTvList();
+  };
+  el.querySelectorAll('[data-use]').forEach(b => b.onclick = () => selectTv(b.dataset.use, b.dataset.name));
+  el.querySelectorAll('[data-forget]').forEach(b => b.onclick = async () => {
+    if (!await confirmBox('Forget TV?', `Remove <b>${esc(b.dataset.forget)}</b> and its pairing key from this controller.`, 'Forget')) return;
+    if (await act(() => api('DELETE', '/api/tvs/' + encodeURIComponent(b.dataset.forget)), 'TV removed')) await loadStatus();
+  });
+  el.querySelectorAll('[data-rename]').forEach(b => b.onclick = async () => {
+    const n = prompt('TV name', b.dataset.name); if (!n || !n.trim()) return;
+    const ip = b.dataset.rename;
+    if (ip === S.status.tv_ip) { if (await act(() => api('POST', '/api/tv', {name: n.trim()}), 'Renamed')) loadStatus(); }
+    else toast('Select the TV first, then rename it', 'err');
+  });
+  $('#addBtn').onclick = () => {
+    const ip = $('#addIp').value.trim();
+    if (!/^[\w.\-:]+$/.test(ip)) { toast('Enter a valid IP address', 'err'); return; }
+    selectTv(ip, $('#addName').value.trim());
+  };
+}
+async function selectTv(ip, name) {
+  const body = {tv_ip: ip, mock_tv: false};
+  if (name) body.name = name;
+  const r = await act(() => api('POST', '/api/tv', body), 'TV selected');
+  if (r) { S.status = r; renderTopbar(); renderSettings(); }
+}
+function renderSide() {
+  const s = S.status, el = $('#sideCol');
+  if (el.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.type !== 'checkbox') return;
+  const kiosk = `${location.origin}/display`;
+  el.innerHTML = `
+    <div class="panel panel-pad" style="display:grid;gap:16px">
+      <div class="label">Mode</div>
+      <div class="setrow"><div class="txt"><div class="t">Demo mode</div><div class="muted small">Simulated TV - test everything without the real TV. Switching modes drops the current pairing.</div></div>
+        <label class="switch"><input type="checkbox" id="mockSw" ${s.mock_tv ? 'checked' : ''} ${s.pairing ? 'disabled' : ''}><span></span></label></div>
+    </div>
+    <div class="panel panel-pad" style="display:grid;gap:16px">
+      <div class="label">Ad schedule</div>
+      <div class="setrow"><div class="txt"><div class="t">Auto ad breaks</div><div class="muted small">Every ${s.ad_interval_minutes} min · next ${s.scheduler_enabled ? fmtTime(s.next_ad) : 'paused'}</div></div>
+        <label class="switch"><input type="checkbox" id="schedSw2" ${s.scheduler_enabled ? 'checked' : ''}><span></span></label></div>
+      <div class="kv small"><span class="muted">Inputs</span><span>Live ${esc(s.normal_input)} · Signage ${esc(s.signage_input)}</span></div>
+    </div>
+    <div class="panel panel-pad" style="display:grid;gap:12px">
+      <div class="label">Signage screen (HDMI 2)</div>
+      <div class="muted small">Open this page fullscreen on the computer plugged into the TV's signage input. ${s.displays_connected} screen${s.displays_connected === 1 ? '' : 's'} connected.</div>
+      <code class="box">${esc(kiosk)}</code>
+      <div style="display:flex;gap:8px"><a class="btn sm" href="/display" target="_blank">Open screen</a><button class="btn sm" id="copyKiosk">Copy kiosk command</button></div>
+    </div>
+    <div class="panel panel-pad" style="display:grid;gap:12px">
+      <div class="label">This device</div>
+      <div class="setrow"><div class="txt"><div class="t">Saved PIN</div><div class="muted small">${pin ? 'This browser remembers the PIN' : 'No PIN saved'}</div></div>
+        <button class="btn sm" id="forgetPin" ${pin ? '' : 'disabled'}>Forget PIN</button></div>
+    </div>`;
+  $('#mockSw').onchange = async e => {
+    const r = await act(() => api('POST', '/api/tv', {mock_tv: e.target.checked}), e.target.checked ? 'Demo mode on' : 'Demo mode off');
+    if (r) S.status = r; renderTopbar(); renderSettings();
+  };
+  $('#schedSw2').onchange = e => act(() => api('POST', '/api/scheduler', {enabled: e.target.checked}), e.target.checked ? 'Auto ads on' : 'Auto ads paused').then(loadStatus);
+  $('#copyKiosk').onclick = () => {
+    const cmd = `start "" chrome --kiosk --autoplay-policy=no-user-gesture-required ${kiosk}`;
+    navigator.clipboard?.writeText(cmd).then(() => toast('Copied', 'ok'), () => prompt('Copy:', cmd));
+  };
+  $('#forgetPin').onclick = () => { pin = ''; localStorage.removeItem('bartv_pin'); toast('PIN forgotten on this browser', 'ok'); renderSide(); };
+}
+
+/* ================= boot ================= */
+(async () => {
+  await Promise.all([loadStatus(), loadAssets(), loadPrograms()]);
+  route();
+  let tick = 0;
+  setInterval(() => {
+    tick++;
+    if (S.status?.pairing || tick % 3 === 0) loadStatus();
+    else if (S.route === 'settings' && S.pairStarted) renderTvHero();
+  }, 1000);
+})();
 </script>
 </body>
 </html>

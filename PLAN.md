@@ -13,34 +13,51 @@ laptop with one `start.bat`.
 
 - FastAPI backend (`bartv/`): dashboard `/`, kiosk `/display`, WebSocket
   event channel, PIN auth, volume/mute/input controls, ad break
-  (`/api/trigger-ad`), media streaming (`/api/stream`), media library
-  (`/api/files`, `/media/*`).
+  (`/api/trigger-ad`), media streaming (`/api/stream`).
+- Desktop-first dashboard SPA (`static/index.html`): top bar with TV
+  status pill + next-ad chip + screens count + settings gear; home view
+  with ASSETS / PROGRAMS tiles and a live-control panel; full Assets
+  view (upload with progress, drag-drop, search/filter, rename, delete,
+  auto-thumbnails via canvas, show-on-TV); Programs view (list + editor:
+  name, base TV/content, content & commercials pickers with reorder);
+  Settings view (pair/re-pair/unpair with live countdown + cancel,
+  multi-TV list with SSDP discovery + add-by-IP, demo mode toggle, ad
+  schedule, kiosk URL + copy command, PIN forget).
+- Asset library: flat files in `static/media/` + `assets.json` sidecar
+  (name/thumb/duration); raw-body PUT upload with 1 GB cap, 409 replace
+  flow, path-traversal hardened.
+- Programs: `programs.json` store; `Default` (base tv) seeded; CRUD
+  only for now — the playback engine is Phase 2.
+- Multi-TV registry: `config.json` `tvs` list with per-TV client keys
+  (keys never exposed by the API); switching TVs restores pairing;
+  SSDP discovery for LG webOS TVs.
 - APScheduler: ad break every `ad_interval_minutes` (clock-aligned),
   pause/resume toggle.
-- Pairing handshake: dashboard "Pair TV" -> accept on TV remote ->
-  client key saved to `config.json`; stale keys auto-cleared.
+- Pairing handshake: settings "Pair" -> accept on TV remote -> client
+  key saved per TV; cancellable; stale keys auto-cleared.
 - Windows `setup.bat` / `start.bat`; `mock_tv: true` mode for
   hardware-free demo.
-- 9 pytest tests pass. PR: https://github.com/Thothius/BarTVController/pull/1
+- 14 pytest tests pass. PR: https://github.com/Thothius/BarTVController/pull/1
 
 ## The "commercial running plan" (to build — Phase 2)
 
 Programs + ad pool. Semantics agreed with Ted:
 
-- A **program** is a named package: either
-  - `mode: "tv"` — normal TV input (HDMI 1 live feed) is the base layer;
+- A **program** is a named wrapper (already CRUD-able in the dashboard):
+  - `base: "tv"` — normal TV input (HDMI 1 live feed) is the base layer;
     commercials interrupt it, then switch back to TV; or
-  - `mode: "playlist"` — plays media assets from `static/media/` in
-    order (optionally shuffled, looping); commercials interrupt the
-    current item, then playback **resumes where it left off**.
+  - `base: "content"` — plays `content[]` asset files (playlist,
+    optionally shuffled/looping); commercials interrupt the current
+    item, then playback **resumes where it left off**.
+  - `commercials[]` — pool of ad asset files picked from per break.
 - **Ad policy** per program, configurable:
   - cadence: every X minutes, or X ads per Y minutes (e.g. 3 per hour);
   - pool: list of commercial media files; pick uniformly at random,
     never the same ad twice in a row;
   - instant: dashboard "Play ad now" plays a random pool ad immediately
     and resumes the program after it ends.
-- Example programs: `Default` (mode tv, ~3 ads/hour), `MMA Package`
-  (mode playlist with MMA highlight clips + its own ad pool).
+- Example programs: `Default` (base tv, ~3 ads/hour), `MMA Package`
+  (base content with MMA highlight clips + its own ad pool).
 - Asset library: everything in `static/media/` is auto-listed; adding
   a file = adding it to the pool or a program playlist via the dashboard.
 
@@ -71,13 +88,13 @@ Programs + ad pool. Semantics agreed with Ted:
 
 ### Phase 2 — Programs & ad pool engine
 
-- [ ] `config.json`: `programs` map + `active_program` (keep backward
-      compat with existing flat keys for the legacy single-ad mode)
+- [x] Program/asset data model + CRUD API + dashboard UI (wrappers only,
+      no playback yet) — built ahead of schedule per Ted's UI spec
 - [ ] Program runner: playlist playback on `/display` via WS events,
       ad policy scheduler (cadence + random pool, no immediate repeat),
       resume-after-ad, fallback to TV input when playlist ends
-- [ ] API: list/create/update programs, set active, per-program
-      instant-ad; dashboard: program selector + bare-bones editor
+- [ ] Wire `active_program` selection + per-program instant-ad into the
+      runner; legacy flat config keys stay for the single-ad fallback
 - [ ] Tests for engine (mock TV, short durations)
 
 ### Phase 3 — Content pipeline
@@ -114,4 +131,14 @@ Programs + ad pool. Semantics agreed with Ted:
   (PIN auto-generated into config.json). `promo.mp4` aliased to
   `ad_weekend.mp4` so the legacy ad break works. Verified: pair, manual
   trigger-ad, scheduled 2-min ad cycle, /api/files (7 files). Gemini
-  dropped (Ted makes media). NEXT: Phase 2 programs + ad pool engine.
+  dropped (Ted makes media).
+- 2026-11-07 (UI round) — Desktop-first dashboard rebuilt per Ted's
+  spec: top bar (TV status, next-ad, screens, gear), ASSETS + PROGRAMS
+  home tiles, Assets view (upload/rename/delete/thumbs), Programs view
+  (CRUD wrappers), Settings view (pair/cancel/unpair, multi-TV + SSDP
+  discovery, demo mode, kiosk URL). Backend: asset/program JSON stores,
+  upload streaming, pair task with cancel, TV registry, /api/tv/discover.
+  Verified in browser (Playwright): all 4 views, PIN modal -> ad
+  trigger, pairing countdown/cancel/complete, upload -> thumb ->
+  delete. 14 tests pass. NEXT: push + laptop pull/restart, then Phase 2
+  programs engine.

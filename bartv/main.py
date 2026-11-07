@@ -2,7 +2,7 @@ import asyncio
 import logging
 import secrets
 from contextlib import asynccontextmanager
-from typing import Literal
+from typing import Literal, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -13,8 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .ads import AdRunner, DisplayHub
-from .config import ROOT, load_config, save_config
-from .tv import TVController
+from .config import CONFIG_PATH, ROOT, load_config, save_config
+from .library import MAX_UPLOAD_BYTES, AssetStore, ProgramStore
+from .tv import TVController, discover_tvs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("bartv")
@@ -25,6 +26,8 @@ hub = DisplayHub()
 ads = AdRunner(cfg, tv, hub)
 scheduler = AsyncIOScheduler()
 JOB_ID = "ad_break"
+assets = AssetStore(ROOT / cfg.media_dir, CONFIG_PATH.parent / "assets.json")
+programs = ProgramStore(CONFIG_PATH.parent / "programs.json")
 
 MEDIA_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv", ".m3u8", ".mp3", ".aac", ".wav", ".m4a", ".jpg", ".jpeg", ".png", ".webp"}
 
@@ -147,6 +150,10 @@ async def status():
         "pin_set": bool(cfg.pin),
         "promo_exists": promo_file().is_file(),
         "tv_inputs": tv.last_inputs,
+        "pairing": pair_state["running"],
+        "pair_error": pair_state["error"],
+        "tvs": tv_list(),
+        "ad_interval_minutes": cfg.ad_interval_minutes,
     }
 
 
@@ -216,14 +223,88 @@ async def stop_media():
     return {"ok": True}
 
 
-@app.post("/api/pair", dependencies=[Depends(require_pin)])
-async def pair():
-    """Trigger a fresh pairing handshake. The TV shows 'Allow access?' - accept on the remote."""
+pair_task: Optional[asyncio.Task] = None
+pair_state = {"running": False, "error": None}
+
+
+def _tv_entry(ip: str) -> Optional[dict]:
+    return next((t for t in cfg.tvs if t.get("ip") == ip), None)
+
+
+def _remember_active_tv():
+    """Store the active TV's pairing in the known-TVs list (real TVs only)."""
+    if cfg.mock_tv:
+        return
+    entry = _tv_entry(cfg.tv_ip)
+    if entry is None:
+        entry = {"ip": cfg.tv_ip, "name": "LG TV", "client_key": None}
+        cfg.tvs.append(entry)
+    entry["client_key"] = cfg.client_key
+
+
+def tv_list():
+    out = [{"ip": t["ip"], "name": t.get("name") or "LG TV", "paired": bool(t.get("client_key")),
+            "active": t["ip"] == cfg.tv_ip and not cfg.mock_tv} for t in cfg.tvs]
+    if not cfg.mock_tv and not _tv_entry(cfg.tv_ip):
+        out.insert(0, {"ip": cfg.tv_ip, "name": "LG TV", "paired": bool(cfg.client_key), "active": True})
+    return out
+
+
+async def _run_pair():
+    global pair_task
+    pair_state.update(running=True, error=None)
     try:
         await tv.pair()
+        _remember_active_tv()
+        save_config(cfg)
+    except asyncio.CancelledError:
+        pair_state["error"] = "cancelled"
     except Exception as e:
-        raise HTTPException(502, f"Pairing failed: {e}")
-    return {"ok": True, "paired": True}
+        pair_state["error"] = str(e)
+    finally:
+        pair_state["running"] = False
+        pair_task = None
+
+
+@app.post("/api/pair", dependencies=[Depends(require_pin)])
+async def pair():
+    """Start the pairing handshake in the background - the TV shows 'Allow access?'.
+
+    Poll GET /api/pair/status; cancel with POST /api/pair/cancel.
+    """
+    global pair_task
+    if pair_task and not pair_task.done():
+        raise HTTPException(409, "Pairing already in progress")
+    pair_state.update(running=True, error=None)
+    pair_task = asyncio.create_task(_run_pair())
+    return {"ok": True, "started": True}
+
+
+@app.get("/api/pair/status")
+async def pair_status():
+    return {"running": pair_state["running"], "paired": bool(cfg.client_key), "error": pair_state["error"]}
+
+
+@app.post("/api/pair/cancel", dependencies=[Depends(require_pin)])
+async def pair_cancel():
+    global pair_task
+    if pair_task and not pair_task.done():
+        pair_task.cancel()
+    pair_state.update(running=False, error="cancelled")
+    return {"ok": True}
+
+
+@app.post("/api/unpair", dependencies=[Depends(require_pin)])
+async def unpair():
+    global pair_task
+    if pair_task and not pair_task.done():
+        pair_task.cancel()
+    await tv.disconnect()
+    tv.last_inputs = []
+    cfg.client_key = None
+    _remember_active_tv()
+    save_config(cfg)
+    return {"ok": True}
 
 
 @app.post("/api/scheduler", dependencies=[Depends(require_pin)])
@@ -244,6 +325,162 @@ async def files():
         if f.is_file() and f.suffix.lower() in MEDIA_EXTENSIONS:
             out.append({"name": f.name, "url": "/media/" + str(f.relative_to(root)).replace("\\", "/"), "size": f.stat().st_size})
     return {"files": out}
+
+
+class AssetPatch(BaseModel):
+    name: Optional[str] = None
+    thumb: Optional[str] = Field(None, max_length=400_000)
+    duration: Optional[float] = Field(None, ge=0)
+
+
+class TVSettings(BaseModel):
+    tv_ip: Optional[str] = Field(None, min_length=1, max_length=64)
+    name: Optional[str] = Field(None, max_length=60)
+    mock_tv: Optional[bool] = None
+
+
+@app.get("/api/tv/discover")
+async def tv_discover():
+    """SSDP search for LG webOS TVs on the local network (~3s)."""
+    return {"tvs": await discover_tvs()}
+
+
+@app.post("/api/tv", dependencies=[Depends(require_pin)])
+async def tv_settings(req: TVSettings):
+    """Select a TV (by IP) or toggle demo mode. Known TVs keep their pairing key."""
+    if pair_task and not pair_task.done():
+        raise HTTPException(409, "Cancel pairing first")
+    ip = req.tv_ip.strip() if req.tv_ip else None
+    switching = (ip and ip != cfg.tv_ip) or (req.mock_tv is not None and req.mock_tv != cfg.mock_tv)
+    if switching:
+        _remember_active_tv()
+        await tv.disconnect()
+        tv.last_inputs = []
+        if req.mock_tv is not None:
+            cfg.mock_tv = req.mock_tv
+        if ip:
+            cfg.tv_ip = ip
+        entry = _tv_entry(cfg.tv_ip)
+        cfg.client_key = None if cfg.mock_tv else (entry or {}).get("client_key")
+    if not cfg.mock_tv and (ip or req.name):
+        entry = _tv_entry(cfg.tv_ip)
+        if entry is None:
+            entry = {"ip": cfg.tv_ip, "name": "LG TV", "client_key": cfg.client_key}
+            cfg.tvs.append(entry)
+        if req.name:
+            entry["name"] = req.name.strip()
+    save_config(cfg)
+    return await status()
+
+
+@app.delete("/api/tvs/{ip}", dependencies=[Depends(require_pin)])
+async def forget_tv(ip: str):
+    cfg.tvs = [t for t in cfg.tvs if t.get("ip") != ip]
+    if ip == cfg.tv_ip and not cfg.mock_tv:
+        await tv.disconnect()
+        tv.last_inputs = []
+        cfg.client_key = None
+    save_config(cfg)
+    return await status()
+
+
+@app.get("/api/assets")
+async def list_assets():
+    return {"assets": assets.list()}
+
+
+@app.put("/api/assets/{filename}", dependencies=[Depends(require_pin)])
+async def upload_asset(filename: str, request: Request, replace: bool = False):
+    """Raw-body upload streamed to disk (body = file bytes)."""
+    length = request.headers.get("content-length")
+    if length and length.isdigit() and int(length) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File too large (max 1 GB)")
+    try:
+        target = assets.target_for(filename, replace=replace)
+    except FileExistsError:
+        raise HTTPException(409, "File exists - confirm replace to overwrite")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    tmp = target.with_name(target.name + ".part")
+    written = 0
+    try:
+        with open(tmp, "wb") as fh:
+            async for chunk in request.stream():
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, "File too large (max 1 GB)")
+                fh.write(chunk)
+        if written == 0:
+            raise HTTPException(400, "Empty file")
+        tmp.replace(target)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return assets.register(target.name)
+
+
+@app.patch("/api/assets/{filename}", dependencies=[Depends(require_pin)])
+async def patch_asset(filename: str, req: AssetPatch):
+    if req.thumb is not None and req.thumb and not req.thumb.startswith("data:image/"):
+        raise HTTPException(400, "thumb must be a data:image/ URL")
+    try:
+        asset = assets.update(filename, name=req.name, thumb=req.thumb, duration=req.duration)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if asset is None:
+        raise HTTPException(404, "Asset not found")
+    return asset
+
+
+@app.delete("/api/assets/{filename}", dependencies=[Depends(require_pin)])
+async def delete_asset(filename: str):
+    try:
+        ok = assets.delete(filename)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not ok:
+        raise HTTPException(404, "Asset not found")
+    programs.scrub(filename)
+    return {"ok": True}
+
+
+class ProgramReq(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    base: Literal["tv", "content"] = "content"
+    content: list[str] = []
+    commercials: list[str] = []
+
+
+class ProgramPatch(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=80)
+    base: Optional[Literal["tv", "content"]] = None
+    content: Optional[list[str]] = None
+    commercials: Optional[list[str]] = None
+
+
+@app.get("/api/programs")
+async def list_programs():
+    return {"programs": programs.list()}
+
+
+@app.post("/api/programs", dependencies=[Depends(require_pin)])
+async def create_program(req: ProgramReq):
+    return programs.create(req.name, req.content, req.commercials, base=req.base)
+
+
+@app.patch("/api/programs/{pid}", dependencies=[Depends(require_pin)])
+async def update_program(pid: str, req: ProgramPatch):
+    p = programs.update(pid, name=req.name, content=req.content, commercials=req.commercials, base=req.base)
+    if p is None:
+        raise HTTPException(404, "Program not found")
+    return p
+
+
+@app.delete("/api/programs/{pid}", dependencies=[Depends(require_pin)])
+async def delete_program(pid: str):
+    if not programs.delete(pid):
+        raise HTTPException(404, "Program not found")
+    return {"ok": True}
 
 
 @app.websocket("/ws/display")

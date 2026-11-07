@@ -30,6 +30,8 @@ class Config(BaseModel):
     pin: str = ""
     # Where /display looks for playable media (uploaded files served under /media/).
     media_dir: str = "static/media"
+    # Known TVs [{ip, name, client_key}] so switching TVs keeps each pairing. Active = tv_ip.
+    tvs: list[dict] = []
 
     @property
     def pin_required(self) -> bool:

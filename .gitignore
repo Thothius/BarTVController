@@ -3,5 +3,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 config.json
+assets.json
+programs.json
 static/media/*
 !static/media/.gitkeep
