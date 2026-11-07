@@ -445,6 +445,9 @@ async def delete_asset(filename: str):
         ok = assets.delete(filename)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    except PermissionError:
+        # Windows keeps files open while they stream to a screen.
+        raise HTTPException(409, "File is in use (playing on a screen) - try again in a moment")
     if not ok:
         raise HTTPException(404, "Asset not found")
     programs.scrub(filename)
@@ -487,11 +490,13 @@ async def create_program(req: ProgramReq):
 
 @app.patch("/api/programs/{pid}", dependencies=[Depends(require_pin)])
 async def update_program(pid: str, req: ProgramPatch):
+    before = programs.get(pid)
     p = programs.update(pid, name=req.name, content=req.content, commercials=req.commercials,
                         base=req.base, ads_per_hour=req.ads_per_hour)
     if p is None:
         raise HTTPException(404, "Program not found")
-    if pid == cfg.active_program:
+    playback_changed = before and (before["base"], before["content"]) != (p["base"], p["content"])
+    if pid == cfg.active_program and playback_changed:
         await engine.apply_program()
     return p
 
@@ -536,7 +541,8 @@ async def ws_display(ws: WebSocket):
             except Exception:
                 continue
             if msg.get("type") == "ended":
-                engine.notify_ended(str(msg.get("what") or ""))
+                seq = msg.get("seq")
+                engine.notify_ended(str(msg.get("what") or ""), seq if isinstance(seq, int) else None)
     except WebSocketDisconnect:
         pass
     finally:

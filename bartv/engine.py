@@ -22,6 +22,8 @@ from .tv import TVController
 log = logging.getLogger("bartv.engine")
 
 DEFAULT_ITEM_TIMEOUT = 12.0
+# Unknown-length item with a screen connected: trust the screen's 'ended', but never hang forever.
+UNKNOWN_DURATION_CAP = 3 * 3600.0
 
 
 class ProgramEngine:
@@ -34,6 +36,8 @@ class ProgramEngine:
         self._content_task: Optional[asyncio.Task] = None
         self._ad_task: Optional[asyncio.Task] = None
         self._ended: dict[str, asyncio.Event] = {}
+        self._seq = 0
+        self._current_seq: dict[str, int] = {}
         self.last_ad: Optional[str] = None
         self.last_error: Optional[str] = None
         self.state = {"mode": "idle", "program": None, "index": 0, "count": 0, "item": None}
@@ -73,7 +77,15 @@ class ProgramEngine:
     def _event(self, what: str) -> asyncio.Event:
         return self._ended.setdefault(what, asyncio.Event())
 
-    def notify_ended(self, what: str):
+    def _next_seq(self, what: str) -> int:
+        self._seq += 1
+        self._current_seq[what] = self._seq
+        return self._seq
+
+    def notify_ended(self, what: str, seq: Optional[int] = None):
+        # A late 'ended' for a previous item (slow or second screen) must not skip the current one.
+        if seq is not None and seq != self._current_seq.get(what):
+            return
         self._event(what).set()
 
     async def _wait_ended(self, what: str, timeout: float):
@@ -115,6 +127,8 @@ class ProgramEngine:
                     await self.tv.set_input(self.cfg.normal_input)
                 except Exception:
                     log.debug("restore normal input failed", exc_info=True)
+        if had_content and not self.content_running:
+            await self.hub.broadcast({"type": "content_stop"})
 
     async def shutdown(self):
         for task in (self._content_task, self._ad_task):
@@ -158,18 +172,40 @@ class ProgramEngine:
                 name = (a or {}).get("name") or f
                 self.state.update(mode="content", program=p["id"], index=(idx - 1) % len(files),
                                   count=len(files), item=f)
-                event = {"type": "content_start", "url": url, "kind": kind, "name": name,
-                         "index": (idx - 1) % len(files), "count": len(files)}
-                self._last_content_event = event
                 self._event("content").clear()
+                event = {"type": "content_start", "url": url, "kind": kind, "name": name,
+                         "index": (idx - 1) % len(files), "count": len(files),
+                         "seq": self._next_seq("content")}
+                self._last_content_event = event
                 await self.hub.broadcast(event)
-                await self._wait_ended("content", self._item_timeout(a))
+                await self._wait_content(a)
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception("Content loop failed")
             self.last_error = "Content loop failed - see server log"
             self.state["mode"] = "idle"
+
+    async def _wait_content(self, asset: Optional[dict]):
+        """Wait for the screen's 'ended'; the fallback clock pauses during commercials
+        because the screen pauses the content while an ad plays."""
+        ev = self._event("content")
+        d = (asset or {}).get("duration")
+        waited = 0.0
+        while not ev.is_set():
+            if d:
+                limit = d + 4
+            else:
+                limit = UNKNOWN_DURATION_CAP if getattr(self.hub, "clients", None) else DEFAULT_ITEM_TIMEOUT
+            if waited >= limit:
+                return
+            step = min(1.0, limit - waited)
+            try:
+                await asyncio.wait_for(ev.wait(), timeout=step)
+            except asyncio.TimeoutError:
+                pass
+            if not self.ad_running:
+                waited += step
 
     def _item_timeout(self, asset: Optional[dict]) -> float:
         d = (asset or {}).get("duration")
@@ -196,12 +232,13 @@ class ProgramEngine:
                 url, kind, name = "/media/" + ad, (asset or {}).get("kind") or "video", \
                     (asset or {}).get("name") or ad
                 timeout = self._item_timeout(asset)
-                event = {"type": "ad_start", "url": url, "kind": kind, "name": name, "reason": reason}
+                event = {"type": "ad_start", "url": url, "kind": kind, "name": name, "reason": reason,
+                         "seq": self._next_seq("ad")}
             else:
                 # Legacy promo break (no program commercials configured).
                 url, kind, name = self.cfg.promo_url, "video", "Ad break"
                 timeout = self.cfg.ad_duration_seconds + 4
-                event = {"type": "ad_start", "src": url}
+                event = {"type": "ad_start", "src": url, "seq": self._next_seq("ad")}
             self._last_ad_event = event
             self.state.update(mode="ad", ad={"name": name, "reason": reason})
             await self.tv.set_input(self.cfg.signage_input)

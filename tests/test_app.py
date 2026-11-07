@@ -166,7 +166,7 @@ def test_ad_break_switches_and_notifies_display(app_env):
     with client.websocket_connect("/ws/display") as ws:
         assert client.post("/api/trigger-ad", headers=H).status_code == 200
         assert client.post("/api/trigger-ad", headers=H).status_code == 409
-        assert json.loads(ws.receive_text()) == {"type": "ad_start", "src": "/static/media/promo.mp4"}
+        assert json.loads(ws.receive_text()) == {"type": "ad_start", "src": "/static/media/promo.mp4", "seq": 1}
         assert json.loads(ws.receive_text()) == {"type": "ad_end"}
     assert main.tv.client.calls == [("set_input", "HDMI_2"), ("set_input", "HDMI_1")]
 
@@ -215,3 +215,12 @@ def test_scheduler_toggle(app_env):
     assert s["engine"]["mode"] == "idle"
     s = client.post("/api/scheduler", json={"enabled": True}, headers=H).json()
     assert s["next_ad"] and s["scheduler_job"] is True
+
+
+def test_delete_in_use_file_returns_409(app_env, monkeypatch):
+    client, main, _ = app_env
+    def locked(_name):
+        raise PermissionError("in use")
+    monkeypatch.setattr(main.assets, "delete", locked)
+    r = client.delete("/api/assets/promo.mp4", headers=H)
+    assert r.status_code == 409 and "in use" in r.json()["detail"]

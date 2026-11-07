@@ -27,7 +27,7 @@ git clone https://github.com/Thothius/BarTVController.git
 cd BarTVController
 setup.bat      :: once: creates .venv, installs deps, makes config.json
 :: edit config.json -> set "tv_ip" to your TV's IP
-start.bat      :: starts server + opens http://localhost:8000/
+start.bat      :: starts server, opens http://localhost:8000/ once it's up (re-running it just reopens the dashboard)
 ```
 
 Python 3.10+ must be installed (tick "Add python.exe to PATH" in the installer). On the phone, open `http://<terminal-pc-ip>:8000/` on the venue Wi-Fi.
@@ -63,8 +63,11 @@ Every action asks for the **PIN** once per device (stored in the browser afterwa
 Something must be plugged into HDMI 2 showing `/display` fullscreen — the terminal PC itself works:
 
 ```bat
-start "" chrome --kiosk --autoplay-policy=no-user-gesture-required http://localhost:8000/display
+kiosk.bat          :: fullscreen Edge/Chrome kiosk on this PC, sound allowed, Alt+F4 to exit
+kiosk.bat 1920     :: same, but on a second monitor that starts at x=1920 (TV as extended display)
 ```
+
+The kiosk skips files that are missing or won't play (after 2 s) instead of freezing, resumes content where it paused after each ad, and reconnects by itself if the server restarts.
 
 (Any small stick/mini PC works too — point its browser at `http://<pc-ip>:8000/display`. Without the autoplay flag, click the page once so promo audio is allowed.)
 

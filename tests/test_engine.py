@@ -273,3 +273,65 @@ def test_content_program_streams_playlist(app_env):
         assert second["url"] == "/media/c2.mp4" and second["index"] == 1
     st = client.get("/api/status").json()
     assert st["engine"]["mode"] == "content" and st["active_program"]["id"] == pid
+
+
+# ---------- edge cases ----------
+
+def test_stale_ended_is_ignored(tmp_path):
+    async def run():
+        engine, tv, hub, programs = make_engine(tmp_path)
+        p = programs.create("P", ["c1.mp4", "c2.mp4"], [], base="content")
+        engine.cfg.active_program = p["id"]
+        await engine.apply_program()
+        first = await wait_sent(hub, "content_start")
+        engine.notify_ended("content", first["seq"])
+        await asyncio.sleep(0.2)
+        second = [e for e in hub.sent if e["type"] == "content_start"][-1]
+        assert second["url"] == "/media/c2.mp4"
+        engine.notify_ended("content", first["seq"])  # late duplicate from a second screen
+        await asyncio.sleep(0.2)
+        assert [e for e in hub.sent if e["type"] == "content_start"][-1] is second
+        await engine.shutdown()
+    asyncio.run(run())
+
+
+def test_content_clock_pauses_during_ad(tmp_path):
+    async def run():
+        engine, tv, hub, programs = make_engine(tmp_path)
+        engine.assets.update("c1.mp4", duration=0.5)  # fallback ends at 4.5 s
+        p = programs.create("P", ["c1.mp4", "c2.mp4"], ["ad1.mp4"], base="content")
+        engine.cfg.active_program = p["id"]
+        await engine.apply_program()
+        await wait_sent(hub, "content_start")
+        engine.play_ad("manual")
+        await wait_sent(hub, "ad_start")
+        await asyncio.sleep(5)  # longer than the item's own timeout, but an ad is on
+        assert len([e for e in hub.sent if e["type"] == "content_start"]) == 1
+        engine.notify_ended("ad")
+        await engine.shutdown()
+    asyncio.run(run())
+
+
+def test_switch_to_tv_program_stops_content_on_screen(tmp_path):
+    async def run():
+        engine, tv, hub, programs = make_engine(tmp_path)
+        p = programs.create("P", ["c1.mp4"], [], base="content")
+        engine.cfg.active_program = p["id"]
+        await engine.apply_program()
+        await wait_sent(hub, "content_start")
+        engine.cfg.active_program = "default"
+        await engine.apply_program()
+        await wait_sent(hub, "content_stop")
+        assert engine.state["mode"] != "content"
+        await engine.shutdown()
+    asyncio.run(run())
+
+
+def test_corrupt_programs_file_is_backed_up(tmp_path):
+    path = tmp_path / "programs.json"
+    path.write_text('{"default": {"id": "def')  # half-written
+    store = ProgramStore(path)
+    assert store.get("default") is not None
+    assert list(tmp_path.glob("programs.corrupt-*.json"))
+    assert "default" in json.loads(path.read_text())
+    assert not (tmp_path / "programs.json.tmp").exists()

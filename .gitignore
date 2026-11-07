@@ -7,3 +7,5 @@ assets.json
 programs.json
 static/media/*
 !static/media/.gitkeep
+*.tmp
+*.corrupt-*.json

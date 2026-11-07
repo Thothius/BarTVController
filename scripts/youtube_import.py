@@ -69,9 +69,11 @@ def save_index(index):
     INDEX.write_text(json.dumps(index, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def download(info, max_height):
+def download(info, max_height, taken=()):
     h = max_height
     name = safe_name(info["title"])
+    if f"{name}.mp4" in taken:  # another video already uses this title
+        name = f"{name}_{info['id']}"
     opts = {
         "format": f"bv*[vcodec^=avc1][height<={h}]+ba[ext=m4a]/b[ext=mp4][height<={h}]/bv*[height<={h}]+ba/b",
         "merge_output_format": "mp4",
@@ -136,7 +138,8 @@ def main():
             continue
         info = video_info(vid)
         print(f"downloading: {info['title']}")
-        file = download(info, args.max_height)
+        taken = {a["file"] for a in index["assets"] if a.get("youtube_id") != vid}
+        file = download(info, args.max_height, taken)
         index["assets"] = [a for a in index["assets"] if a.get("youtube_id") != vid]
         index["assets"].append(index_entry(info, file))
         save_index(index)

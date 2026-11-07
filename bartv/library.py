@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from pathlib import Path
@@ -11,6 +12,8 @@ VIDEO_EXTS = {".mp4", ".webm", ".mov", ".mkv", ".m3u8"}
 AUDIO_EXTS = {".mp3", ".aac", ".wav", ".m4a"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 MEDIA_EXTENSIONS = VIDEO_EXTS | AUDIO_EXTS | IMAGE_EXTS
+
+log = logging.getLogger("bartv.library")
 
 MAX_UPLOAD_BYTES = 1024 * 1024 * 1024  # 1 GB
 
@@ -35,14 +38,29 @@ def sanitize_filename(name: str) -> str:
 
 
 def _load(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text())
-    except Exception:
+    if not path.exists():
         return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    # Keep the damaged file for recovery instead of silently overwriting it.
+    backup = path.with_name(f"{path.stem}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}{path.suffix}")
+    try:
+        path.replace(backup)
+        log.warning("%s was unreadable - moved to %s, starting fresh", path.name, backup.name)
+    except OSError:
+        log.warning("%s is unreadable", path.name)
+    return {}
 
 
 def _save(path: Path, data: dict):
-    path.write_text(json.dumps(data, indent=2))
+    # Write-then-rename so a crash or power cut never leaves a half-written file.
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(path)
 
 
 def _now() -> str:
@@ -143,9 +161,8 @@ class ProgramStore:
 
     def __init__(self, path: Path):
         self.path = Path(path)
-        if self.path.exists():
-            self._data = _load(self.path)
-        else:
+        self._data = _load(self.path)
+        if not self._data:
             # Default program: regular TV feed as the base, commercials on top.
             self._data = {"default": {"name": "Default", "base": "tv", "content": [],
                                       "commercials": [], "created": _now()}}
