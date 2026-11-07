@@ -411,7 +411,7 @@ async function loadPrograms() {
 function tvState(s) {
   if (!s) return {dot: 'err', text: 'Server offline'};
   if (s.pairing) return {dot: 'warn pulse', text: 'Pairing… accept on TV'};
-  if (s.mock_tv) return {dot: s.paired ? 'ok' : 'warn', text: s.paired ? 'Demo TV connected' : 'Demo TV · not paired'};
+  if (s.mock_tv) return {dot: s.paired ? 'ok' : 'warn', text: s.paired ? 'LGTestTV connected' : 'LGTestTV · not paired'};
   const tv = (s.tvs || []).find(t => t.active);
   const name = tv ? tv.name : 'TV';
   return s.paired ? {dot: 'ok', text: `${name} connected`} : {dot: 'err', text: `${name} not paired`};
@@ -993,7 +993,7 @@ function renderSettings() {
 function renderTvHero() {
   const s = S.status, el = $('#tvHero');
   const active = (s.tvs || []).find(t => t.active);
-  const name = s.mock_tv ? 'Demo TV (simulated)' : (active?.name || 'LG TV');
+  const name = s.mock_tv ? 'LGTestTV (mock)' : (active?.name || 'LG TV');
   const step = s.paired ? 3 : s.pairing ? 2 : 1;
   const scr = s.paired ? 'ok' : s.pairing ? 'wait' : '';
   const stateTxt = s.paired ? 'Connected and ready' : s.pairing ? 'Waiting for you to accept on the TV' : 'Not paired';
@@ -1006,7 +1006,7 @@ function renderTvHero() {
       <div class="scr ${scr}">${I.tv}</div>
       <div style="flex:1;min-width:0">
         <h2>${esc(name)}</h2>
-        <div class="muted">${s.mock_tv ? 'Demo mode - no real TV is controlled' : esc(s.tv_ip)} · <span style="color:${s.paired ? 'var(--ok)' : s.pairing ? 'var(--warn)' : 'var(--err)'}">${stateTxt}</span></div>
+        <div class="muted">${s.mock_tv ? 'Mock mode - no real TV is controlled' : esc(s.tv_ip)} · <span style="color:${s.paired ? 'var(--ok)' : s.pairing ? 'var(--warn)' : 'var(--err)'}">${stateTxt}</span></div>
       </div>
       ${s.pairing ? `<button class="btn danger" id="pairCancel">${I.x} Cancel pairing</button>`
         : s.paired ? `<button class="btn" id="pairBtn">Re-pair</button><button class="btn danger" id="unpairBtn">Unpair</button>`
@@ -1045,7 +1045,7 @@ function renderTvList() {
     <div class="section-head"><span class="label">TVs</span>
       <button class="btn sm" id="scanBtn" ${S.scanning || s.pairing ? 'disabled' : ''}>${I.search} ${S.scanning ? 'Searching…' : 'Find TVs on network'}</button></div>
     <div class="rows" style="gap:8px">
-      ${s.mock_tv ? `<div class="tvrow active"><div><div class="nm">Demo TV <span class="pill acc">Active</span> ${s.paired ? '<span class="pill ok">Paired</span>' : ''}</div><div class="ip">Simulated - turn off Demo mode to use a real TV</div></div><div></div></div>` : ''}
+      ${s.mock_tv ? `<div class="tvrow active"><div><div class="nm">LGTestTV <span class="pill acc">Active</span> ${s.paired ? '<span class="pill ok">Paired</span>' : ''}</div><div class="ip">Mock TV - turn off Mock mode to use a real TV</div></div><div></div></div>` : ''}
       ${tvs.map(t => `
         <div class="tvrow ${t.active ? 'active' : ''}">
           <div><div class="nm">${esc(t.name)} ${t.active ? '<span class="pill acc">Active</span>' : ''} ${t.paired ? '<span class="pill ok">Paired</span>' : '<span class="pill">Not paired</span>'}</div><div class="ip">${esc(t.ip)}</div></div>
@@ -1107,7 +1107,7 @@ function renderSide() {
   el.innerHTML = `
     <div class="panel panel-pad" style="display:grid;gap:16px">
       <div class="label">Mode</div>
-      <div class="setrow"><div class="txt"><div class="t">Demo mode</div><div class="muted small">Simulated TV - test everything without the real TV. Switching modes drops the current pairing.</div></div>
+      <div class="setrow"><div class="txt"><div class="t">Mock mode</div><div class="muted small">Simulated LGTestTV - test everything without the real TV. Switching modes drops the current pairing.</div></div>
         <label class="switch"><input type="checkbox" id="mockSw" ${s.mock_tv ? 'checked' : ''} ${s.pairing ? 'disabled' : ''}><span></span></label></div>
     </div>
     <div class="panel panel-pad" style="display:grid;gap:16px">
@@ -1128,7 +1128,7 @@ function renderSide() {
         <button class="btn sm" id="forgetPin" ${pin ? '' : 'disabled'}>Forget PIN</button></div>
     </div>`;
   $('#mockSw').onchange = async e => {
-    const r = await act(() => api('POST', '/api/tv', {mock_tv: e.target.checked}), e.target.checked ? 'Demo mode on' : 'Demo mode off');
+    const r = await act(() => api('POST', '/api/tv', {mock_tv: e.target.checked}), e.target.checked ? 'Mock mode on (LGTestTV)' : 'Mock mode off');
     if (r) S.status = r; renderTopbar(); renderSettings();
   };
   $('#schedSw2').onchange = e => act(() => api('POST', '/api/scheduler', {enabled: e.target.checked}), e.target.checked ? 'Auto ads on' : 'Auto ads paused').then(loadStatus);

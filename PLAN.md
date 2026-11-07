@@ -9,6 +9,26 @@ staff control it from a phone browser; programmed "commercial breaks"
 interrupt the shown content on a schedule; everything runs from the bar
 laptop with one `start.bat`.
 
+## Master plan (agreed 2026-11-07): laptop first, real TV last
+
+Everything is built and polished on the bar laptop against the mock TV
+**LGTestTV** — interface, media, programs, commercials, scheduling —
+before any real hardware is touched. The real LG TV enters only at the
+end, once the laptop side is demo-ready and the network path is solved.
+
+1. **Laptop-only build & polish (ACTIVE)** — mock LGTestTV:
+   - [x] Desktop dashboard: top bar, ASSETS / PROGRAMS / Settings views,
+         assets CRUD + thumbnails, program wrappers, multi-TV settings
+   - [ ] Phase 2 programs engine: full "commercial running plan" demoable
+         on the laptop (Default = TV base + commercials 2–3x/hour; content
+         programs with playlists; RNG pool, no immediate repeat; instant
+         ad; resume after ad)
+   - [ ] Polish pass: edge cases, demo script, bar runbook
+2. **Real TV bring-up (LAST)** — needs TV IP / staff SSID or laptop
+   hotspot (Phase 0 network fix); then pair the real TV and re-run the
+   same flows.
+3. **Bar hardening** — autostart, kiosk Chrome on HDMI 2, runbook.
+
 ## What exists today (working, tested against mock TV)
 
 - FastAPI backend (`bartv/`): dashboard `/`, kiosk `/display`, WebSocket
@@ -142,3 +162,8 @@ Programs + ad pool. Semantics agreed with Ted:
   trigger, pairing countdown/cancel/complete, upload -> thumb ->
   delete. 14 tests pass. NEXT: push + laptop pull/restart, then Phase 2
   programs engine.
+- 2026-11-07 (master plan) — Ted: run ALL development on the laptop
+  first against mock TV **LGTestTV** (interface, media, commercials,
+  scheduling), real TV last. Master plan section added; mock TV renamed
+  from "Demo TV" to "LGTestTV" across the dashboard. NEXT: restart
+  laptop server on new build, then Phase 2 programs engine.
