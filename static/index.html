@@ -232,6 +232,8 @@
   .setrow .t { font-weight: 600; }
   .check { display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:600; }
   .check input { width:16px; height:16px; accent-color: var(--accent); }
+  .ctl-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .ctl-grid .btn { height:36px; justify-content:center; }
   code.box { display:block; padding: 10px 12px; border-radius: 8px; background: #0a0b0e; border:1px solid var(--line); font-size: 12px; color: #c9cdd6; word-break: break-all; }
 
   /* ---------- modal / toast ---------- */
@@ -592,7 +594,7 @@ function renderSession() {
       <div class="tvbar"><span class="dot ${s && s.paired ? 'ok' : 'warn'}"></span><b>${esc(tvName(s))}</b><span class="pill muted">muted preview</span><span class="muted" style="margin-left:auto">live</span></div>
       <div class="tvscreen"><iframe src="/display?muted=1&preview=1" title="TV preview"></iframe><div class="tvstate" id="tvStateChip"></div></div>
     </div>
-    <div class="panel panel-pad" id="nowPanel"></div>`;
+    <div class="panel" id="nowPanel" style="padding:10px 14px"></div>`;
   updateSession();
 }
 function updateSession() {
@@ -610,17 +612,14 @@ function updateSession() {
   if (np.dataset.sig === sig) return;
   np.dataset.sig = sig;
   const modeText = s.ad_running ? 'Ad break' : eng.mode === 'content' ? 'Playing content' : (s.paired ? 'TV input' : 'Idle');
-  const itemText = eng.item ? ` · clip ${(eng.index ?? 0) + 1} of ${eng.count}` : '';
+  const itemText = eng.item && eng.count ? ` · clip ${(eng.index ?? 0) + 1}/${eng.count}` : '';
+  const adText = s.scheduler_enabled && s.next_ad ? ` · next ad ${fmtTime(s.next_ad)}` : '';
   np.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="font-size:16px;font-weight:700">${ap ? esc(ap.name) : 'No program'}</span>
-      ${ap ? `<span class="muted small">${esc(progSummary(ap))}</span>` : ''}
+      <span style="font-weight:700;font-size:15px">${ap ? esc(ap.name) : 'No program'}</span>
+      <span class="muted small">${ap ? esc(progSummary(ap)) + ' · ' : ''}${esc(modeText)}${esc(itemText)}${esc(adText)}</span>
       <div style="flex:1"></div>
-      <a class="btn sm ghost" href="#/programs" style="text-decoration:none">Manage</a>
-    </div>
-    <div class="muted small" style="margin-top:4px">${esc(modeText)}${itemText}${s.scheduler_enabled && s.next_ad ? ' · next ad ' + fmtTime(s.next_ad) : ''}</div>
-    <div class="row" style="margin-top:8px">
-      <select class="field" id="progPick" style="flex:1;min-width:0;height:34px">${S.programs.map(p => `<option value="${esc(p.id)}" ${p.active ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+      <select class="field" id="progPick" style="width:180px;height:32px;padding:0 8px" title="Switch program">${S.programs.map(p => `<option value="${esc(p.id)}" ${p.active ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
     </div>`;
   $('#progPick').onchange = async e => {
     const r = await act(() => api('POST', '/api/programs/active', {id: e.target.value}), 'Program switched');
@@ -636,17 +635,14 @@ function renderControlPanel() {
   if (el.dataset.ready) { updateControlPanel(); return; }
   el.dataset.ready = '1';
   el.innerHTML = `
-    <div class="label">Playback</div>
-    <button class="btn primary lg" id="adBtn">${I.ad} Play ad break now</button>
-    <div class="row" style="gap:10px">
-      <button class="btn" id="skipBtn" style="flex:1" title="Skip the current clip and play the next one">Skip clip</button>
-      <button class="btn" id="stopBtn" style="flex:1">Stop media</button>
+    <div class="ctl-grid">
+      <button class="btn primary" id="adBtn" style="grid-column:1/-1">${I.ad} Play ad break now</button>
+      <button class="btn sm" id="skipBtn" title="Skip the current clip and play the next one">Skip clip</button>
+      <button class="btn sm" id="stopBtn">Stop media</button>
+      <button class="btn sm" id="inNormal">Live TV</button>
+      <button class="btn sm" id="inSignage">Signage</button>
     </div>
     <div class="sep"></div>
-    <div style="display:grid;gap:8px">
-      <div class="label">TV input</div>
-      <div class="seg" id="inputSeg"><button data-in="normal">Live TV</button><button data-in="signage">Signage</button></div>
-    </div>
     <div style="display:grid;gap:8px">
       <div class="label">Sound</div>
       <div class="vol-row"><input type="range" id="vol" min="0" max="100"><output id="volOut">20</output>
@@ -659,10 +655,8 @@ function renderControlPanel() {
     </div>
     <div id="ctlNotes" style="display:grid;gap:8px"></div>`;
   $('#adBtn').onclick = () => act(() => api('POST', '/api/trigger-ad', {}), 'Ad break started').then(loadStatus);
-  el.querySelectorAll('#inputSeg button').forEach(b => b.onclick = () => {
-    const input = b.dataset.in === 'normal' ? S.status.normal_input : S.status.signage_input;
-    act(() => api('POST', '/api/input', {input}), 'Switched to ' + input);
-  });
+  $('#inNormal').onclick = () => act(() => api('POST', '/api/input', {input: S.status.normal_input}), 'Switched to ' + S.status.normal_input);
+  $('#inSignage').onclick = () => act(() => api('POST', '/api/input', {input: S.status.signage_input}), 'Switched to ' + S.status.signage_input);
   const vol = $('#vol');
   vol.value = localStorage.getItem('bartv_vol') || '20';
   $('#volOut').textContent = vol.value;
@@ -690,8 +684,8 @@ function updateControlPanel() {
   $('#ctlNotes').innerHTML = notes.join('');
   $('#schedSw').checked = s.scheduler_enabled;
   $('#schedTxt').textContent = s.scheduler_enabled ? `Every ${s.ad_interval_minutes} min · next ${fmtTime(s.next_ad)} · last ${fmtTime(s.last_ad)}` : 'Paused';
-  const seg = document.querySelectorAll('#inputSeg button');
-  seg[0].textContent = `Live TV · ${s.normal_input}`; seg[1].textContent = `Signage · ${s.signage_input}`;
+  $('#inNormal').textContent = 'Live TV · ' + s.normal_input;
+  $('#inSignage').textContent = 'Signage · ' + s.signage_input;
 }
 
 /* ================= ASSETS ================= */
