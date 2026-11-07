@@ -29,9 +29,13 @@ const idle = document.getElementById('idle');
 const badge = document.getElementById('badge');
 const unlock = document.getElementById('unlock');
 const clock = document.getElementById('clock');
+const urlParams = new URLSearchParams(location.search);
+const PREVIEW = urlParams.get('preview') === '1';   // dashboard preview: watch-only, no 'ended' events
+const forceMuted = PREVIEW || urlParams.get('muted') === '1';
 
 unlock.onclick = () => { unlock.remove(); vid.muted = false; aud.muted = false; };
-if (navigator.userActivation && navigator.userActivation.hasBeenActive) unlock.remove();
+if (forceMuted || (navigator.userActivation && navigator.userActivation.hasBeenActive)) unlock.remove();
+vid.muted = aud.muted = forceMuted;
 setInterval(() => { clock.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }, 1000);
 
 const AUDIO_EXT = ['mp3', 'aac', 'wav', 'm4a', 'ogg', 'flac'];
@@ -39,7 +43,7 @@ const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
 const IMAGE_SECONDS = 8;
 
 let ws = null;
-function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+function send(obj) { if (PREVIEW) return; if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
 function sniffKind(url, kind) {
   if (kind && kind !== 'video') return kind;
@@ -69,6 +73,15 @@ function playMedia(url, kind, ctx, name) {
   idle.style.display = 'none'; badge.style.display = 'block';
   badge.textContent = ctx === 'ad' ? 'AD · ' + (name || '') : ctx === 'content' ? 'PROGRAM · ' + (name || '') : (name || '');
   const finish = () => {
+    if (PREVIEW) {
+      // Watch-only preview: loop content locally, never report to the server.
+      if (ctx === 'content') {
+        if (kind === 'video') { vid.currentTime = 0; vid.play().catch(() => {}); }
+        else if (kind === 'audio') { aud.currentTime = 0; aud.play().catch(() => {}); }
+        else imageTimer = setTimeout(finish, IMAGE_SECONDS * 1000);
+      }
+      return;
+    }
     if (ctx === 'content' || ctx === 'ad') send({type: 'ended', what: ctx});
     if (ctx === 'ad') return; // server sends ad_end -> resume content
     if (ctx === 'media') { showIdle(); }
@@ -80,7 +93,7 @@ function playMedia(url, kind, ctx, name) {
     img.src = url; img.style.display = 'block';
     imageTimer = setTimeout(finish, IMAGE_SECONDS * 1000);
   } else {
-    vid.src = url; vid.style.display = 'block'; vid.muted = false;
+    vid.src = url; vid.style.display = 'block'; vid.muted = forceMuted;
     if (ctx === 'content' && contentTime > 0) vid.currentTime = contentTime;
     vid.play().catch(() => { vid.muted = true; vid.play(); });
     vid.onended = finish;

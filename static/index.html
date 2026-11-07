@@ -256,6 +256,14 @@
     .topbar { padding: 0 16px; }
     .hide-narrow { display: none !important; }
   }
+  .tvbox { border: 12px solid #171a21; border-radius: 16px; background: #000; box-shadow: 0 12px 34px #0009; overflow: hidden; }
+  .tvbar { display: flex; align-items: center; gap: 8px; padding: 9px 14px; background: #14171e; color: #d7dbe4; font-weight: 600; font-size: 14px; }
+  .tvbar .muted { color: #8b93a3; font-weight: 400; }
+  .tvscreen { position: relative; aspect-ratio: 16 / 9; background: #000; }
+  .tvscreen iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+  .tvstate { position: absolute; top: 10px; right: 10px; padding: 4px 10px; border-radius: 999px; background: #000a; color: #9aa3b2; font: 600 11px/1.4 system-ui, sans-serif; letter-spacing: .05em; text-transform: uppercase; }
+  .tvstate.ad { background: #7a1f1f; color: #ffd7d7; }
+  .tvstate.prog { background: #14324a; color: #bfe3ff; }
 </style>
 </head>
 <body>
@@ -416,6 +424,12 @@ function tvState(s) {
   const name = tv ? tv.name : 'TV';
   return s.paired ? {dot: 'ok', text: `${name} connected`} : {dot: 'err', text: `${name} not paired`};
 }
+function tvName(s) {
+  if (!s) return 'TV';
+  if (s.mock_tv) return 'LGTestTV';
+  const tv = (s.tvs || []).find(t => t.active);
+  return tv ? tv.name : 'TV';
+}
 function renderTopbar() {
   const s = S.status, st = tvState(s);
   $('#chipTv').innerHTML = `<span class="dot ${st.dot}"></span><b>${esc(st.text)}</b>${s && !s.mock_tv ? `<span>${esc(s.tv_ip)}</span>` : ''}`;
@@ -559,6 +573,11 @@ function renderControlPanel() {
   if (el.dataset.ready) { updateControlPanel(); return; }
   el.dataset.ready = '1';
   el.innerHTML = `
+    <div class="tvbox">
+      <div class="tvbar"><span class="dot ${s.paired ? 'ok' : 'warn'}"></span><b>${esc(tvName(s))}</b><span class="muted" style="margin-left:auto">live preview</span></div>
+      <div class="tvscreen"><iframe src="/display?muted=1&preview=1" title="TV preview"></iframe><div class="tvstate" id="tvStateChip"></div></div>
+    </div>
+    <div class="sep"></div>
     <div class="label">Live control</div>
     <button class="btn primary lg" id="adBtn">${I.ad} Play ad break now</button>
     <div id="ctlNotes" style="display:grid;gap:8px"></div>
@@ -604,6 +623,13 @@ function updateControlPanel() {
   $('#ctlNotes').innerHTML = notes.join('');
   $('#schedSw').checked = s.scheduler_enabled;
   $('#schedTxt').textContent = s.scheduler_enabled ? `Every ${s.ad_interval_minutes} min · next ${fmtTime(s.next_ad)} · last ${fmtTime(s.last_ad)}` : 'Paused';
+  const tvChip = $('#tvStateChip');
+  if (tvChip) {
+    const eng = s.engine || {};
+    const mode = s.ad_running ? 'ad' : (eng.mode === 'content' ? 'prog' : '');
+    tvChip.className = 'tvstate' + (mode ? ' ' + mode : '');
+    tvChip.textContent = s.ad_running ? 'AD break' : eng.mode === 'content' ? `Program · ${(s.active_program && s.active_program.name) || ''}` : (s.paired ? 'TV input' : 'Not paired');
+  }
   const seg = document.querySelectorAll('#inputSeg button');
   seg[0].textContent = `Live TV · ${s.normal_input}`; seg[1].textContent = `Signage · ${s.signage_input}`;
 }

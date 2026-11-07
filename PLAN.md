@@ -178,3 +178,9 @@ Programs + ad pool. Semantics agreed with Ted:
   badges, program summaries show rate + ACTIVE. 21 tests pass (engine
   unit + API/WS). Browser-verified home/programs/kiosk. NEXT: push,
   laptop pull + restart, live demo of MMA Night program on LGTestTV.
+- 2026-11-07 (TV frame) — Dashboard home now shows a stylized TV frame:
+  title bar with the TV name (LGTestTV in mock mode) + "live preview",
+  the real /display kiosk screen embedded muted inside the bezel, and a
+  state chip (TV input / Program · name / AD break). Kiosk page gained
+  ?muted=1&preview=1 params: preview mode never reports 'ended' events
+  and loops content locally, so it cannot double-advance the playlist.
