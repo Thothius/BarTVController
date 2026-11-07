@@ -264,6 +264,9 @@
   .tvstate { position: absolute; top: 10px; right: 10px; padding: 4px 10px; border-radius: 999px; background: #000a; color: #9aa3b2; font: 600 11px/1.4 system-ui, sans-serif; letter-spacing: .05em; text-transform: uppercase; }
   .tvstate.ad { background: #7a1f1f; color: #ffd7d7; }
   .tvstate.prog { background: #14324a; color: #bfe3ff; }
+  .session { display: grid; gap: 18px; align-content: start; }
+  .tvbox { max-width: 880px; }
+  .pill.muted { background: #262b36; color: #9aa3b2; }
 </style>
 </head>
 <body>
@@ -275,6 +278,8 @@
   <span class="chip hide-narrow" id="chipAd"></span>
   <span class="chip hide-narrow" id="chipScreens"></span>
   <button class="chip" id="chipTv" onclick="go('#/settings')"></button>
+  <a class="gear" id="navAssets" href="#/assets" title="Assets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5"/></svg></a>
+  <a class="gear" id="navPrograms" href="#/programs" title="Programs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 10 6-10 6L2 8z"/><path d="m2 16 10 6 10-6"/></svg></a>
   <a class="gear" id="gear" href="#/settings" title="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   </a>
@@ -404,6 +409,7 @@ async function loadStatus() {
   try { S.status = await (await fetch('/api/status')).json(); }
   catch { S.status = null; }
   renderTopbar();
+  renderSession();
   if (S.route === 'home') renderControlPanel();
   if (S.route === 'settings') renderSettings();
 }
@@ -441,6 +447,8 @@ function renderTopbar() {
   const crumbs = {assets: 'Assets', programs: 'Programs', settings: 'Settings'}[S.route];
   $('#crumbs').innerHTML = crumbs ? `${I.right}<b>${crumbs}</b>` : '';
   $('#gear').classList.toggle('active', S.route === 'settings');
+  $('#navAssets')?.classList.toggle('active', S.route === 'assets');
+  $('#navPrograms')?.classList.toggle('active', S.route === 'programs');
 }
 
 /* ================= thumbnails ================= */
@@ -525,10 +533,10 @@ window.addEventListener('hashchange', () => {
 function renderHome() {
   $('#view').innerHTML = `
     <div class="home">
-      <div class="tiles" id="tiles"></div>
+      <div class="session" id="session"></div>
       <aside class="panel panel-pad control" id="control"></aside>
     </div>`;
-  renderHomeTiles();
+  renderSession();
   renderControlPanel();
 }
 function renderHomeTiles() {
@@ -565,6 +573,58 @@ function progSummary(p) {
   const rate = (p.ads_per_hour ?? 3) > 0 ? `${p.ads_per_hour ?? 3}/hr` : 'ads off';
   return `${base} + ${p.commercials.length} ad${p.commercials.length === 1 ? '' : 's'} · ${rate}${p.active ? ' · ACTIVE' : ''}`;
 }
+/* ================= SESSION (home: now playing) ================= */
+function renderSession() {
+  const el = $('#session'); if (!el) return;
+  if (el.dataset.ready) { updateSession(); return; }
+  el.dataset.ready = '1';
+  const s = S.status;
+  el.innerHTML = `
+    <div class="tvbox">
+      <div class="tvbar"><span class="dot ${s && s.paired ? 'ok' : 'warn'}"></span><b>${esc(tvName(s))}</b><span class="pill muted">muted preview</span><span class="muted" style="margin-left:auto">live</span></div>
+      <div class="tvscreen"><iframe src="/display?muted=1&preview=1" title="TV preview"></iframe><div class="tvstate" id="tvStateChip"></div></div>
+    </div>
+    <div class="panel panel-pad" id="nowPanel"></div>`;
+  updateSession();
+}
+function updateSession() {
+  const s = S.status; if (!s) return;
+  const eng = s.engine || {};
+  const ap = s.active_program;
+  const chip = $('#tvStateChip');
+  if (chip) {
+    const mode = s.ad_running ? 'ad' : (eng.mode === 'content' ? 'prog' : '');
+    chip.className = 'tvstate' + (mode ? ' ' + mode : '');
+    chip.textContent = s.ad_running ? 'AD break' : eng.mode === 'content' ? `Program · ${(ap && ap.name) || ''}` : (s.paired ? 'TV input' : 'Not paired');
+  }
+  const np = $('#nowPanel'); if (!np) return;
+  const sig = JSON.stringify([ap && ap.id, eng.mode, eng.item, s.ad_running, s.next_ad, S.programs.map(p => p.id + (p.active ? '*' : '')).join(',')]);
+  if (np.dataset.sig === sig) return;
+  np.dataset.sig = sig;
+  const modeText = s.ad_running ? 'Ad break playing' : eng.mode === 'content' ? 'Playing program content' : (s.paired ? 'Showing TV input' : 'Idle - pair a TV in Settings');
+  const itemText = eng.item ? `Now: ${eng.item}` + (eng.count ? ` (clip ${(eng.index ?? 0) + 1} of ${eng.count})` : '') : '';
+  np.innerHTML = `
+    <div class="label">Now running</div>
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <div style="font-size:22px;font-weight:700">${ap ? esc(ap.name) : 'No program'}</div>
+      ${ap ? `<span class="muted small">${esc(progSummary(ap))}</span>` : ''}
+      <div style="flex:1"></div>
+      <a class="btn sm" href="#/programs" style="text-decoration:none">Manage programs</a>
+    </div>
+    <div class="muted" style="margin-top:8px">${esc(modeText)}${itemText ? ' · ' + esc(itemText) : ''} · Next ad ${s.scheduler_enabled && s.next_ad ? fmtTime(s.next_ad) : 'paused'}</div>
+    <div class="sep"></div>
+    <div class="label">Switch program</div>
+    <div class="row" style="gap:10px;align-items:center;margin-top:8px">
+      <select class="field" id="progPick" style="flex:1;min-width:0">${S.programs.map(p => `<option value="${esc(p.id)}" ${p.active ? 'selected' : ''}>${esc(p.name)} — ${esc(progSummary(p))}</option>`).join('')}</select>
+      <button class="btn" id="progSet" type="button">Set active</button>
+    </div>`;
+  $('#progSet').onclick = async () => {
+    const id = $('#progPick').value;
+    const r = await act(() => api('POST', '/api/programs/active', {id}), 'Program activated');
+    if (r) { await loadPrograms(); await loadStatus(); }
+  };
+}
+
 let volTimer = null;
 function renderControlPanel() {
   const el = $('#control'); if (!el) return;
@@ -573,11 +633,6 @@ function renderControlPanel() {
   if (el.dataset.ready) { updateControlPanel(); return; }
   el.dataset.ready = '1';
   el.innerHTML = `
-    <div class="tvbox">
-      <div class="tvbar"><span class="dot ${s.paired ? 'ok' : 'warn'}"></span><b>${esc(tvName(s))}</b><span class="muted" style="margin-left:auto">live preview</span></div>
-      <div class="tvscreen"><iframe src="/display?muted=1&preview=1" title="TV preview"></iframe><div class="tvstate" id="tvStateChip"></div></div>
-    </div>
-    <div class="sep"></div>
     <div class="label">Live control</div>
     <button class="btn primary lg" id="adBtn">${I.ad} Play ad break now</button>
     <div id="ctlNotes" style="display:grid;gap:8px"></div>
@@ -623,13 +678,6 @@ function updateControlPanel() {
   $('#ctlNotes').innerHTML = notes.join('');
   $('#schedSw').checked = s.scheduler_enabled;
   $('#schedTxt').textContent = s.scheduler_enabled ? `Every ${s.ad_interval_minutes} min · next ${fmtTime(s.next_ad)} · last ${fmtTime(s.last_ad)}` : 'Paused';
-  const tvChip = $('#tvStateChip');
-  if (tvChip) {
-    const eng = s.engine || {};
-    const mode = s.ad_running ? 'ad' : (eng.mode === 'content' ? 'prog' : '');
-    tvChip.className = 'tvstate' + (mode ? ' ' + mode : '');
-    tvChip.textContent = s.ad_running ? 'AD break' : eng.mode === 'content' ? `Program · ${(s.active_program && s.active_program.name) || ''}` : (s.paired ? 'TV input' : 'Not paired');
-  }
   const seg = document.querySelectorAll('#inputSeg button');
   seg[0].textContent = `Live TV · ${s.normal_input}`; seg[1].textContent = `Signage · ${s.signage_input}`;
 }

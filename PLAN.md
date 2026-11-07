@@ -193,3 +193,9 @@ Programs + ad pool. Semantics agreed with Ted:
   set to 0000 (local config). NEXT: Ted human-tests the demo, then
   Phase 2 leftovers (multi-display guard documented) and Phase 3
   YouTube import polish.
+- 2026-11-07 (home session view) — Home rebuilt per Ted: big TV frame
+  (LGTestTV title bar, "muted preview" badge, live kiosk preview, state
+  chip) is now the main view with a "Now running" panel (active program,
+  current clip, next ad) and a Switch-program quick picker. Assets and
+  Programs moved to top-bar icons next to Settings; old tiles removed
+  from home. Live control stays in the right rail. Static-only change.
