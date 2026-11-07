@@ -410,7 +410,7 @@ function confirmBox(title, text, okLabel = 'Delete', danger = true) {
 }
 
 /* ================= state ================= */
-const S = { status: null, assets: [], programs: [], route: '', assetFilter: 'all', assetQuery: '', selProgram: null, draft: null, pairStarted: null, discovered: null, scanning: false };
+const S = { status: null, assets: [], programs: [], route: '', assetFilter: 'all', assetRole: 'all', assetQuery: '', selProgram: null, draft: null, pairStarted: null, discovered: null, scanning: false };
 const assetMap = () => Object.fromEntries(S.assets.map(a => [a.file, a]));
 
 async function loadStatus() {
@@ -713,6 +713,9 @@ function renderAssets() {
       <div class="seg" id="af">
         ${['all', 'video', 'image', 'audio'].map(k => `<button data-k="${k}" class="${S.assetFilter === k ? 'on' : ''}">${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}
       </div>
+      <div class="seg" id="ar">
+        ${[['all', 'All'], ['content', 'Content'], ['commercial', 'Ads'], ['unsorted', 'Unsorted']].map(([k, label]) => `<button data-r="${k}" class="${(S.assetRole || 'all') === k ? 'on' : ''}">${label}</button>`).join('')}
+      </div>
       <div class="spacer"></div>
       <span class="muted small" id="acount"></span>
     </div>
@@ -724,11 +727,17 @@ function renderAssets() {
     document.querySelectorAll('#af button').forEach(x => x.classList.toggle('on', x === b));
     renderAssetGrid();
   });
+  document.querySelectorAll('#ar button').forEach(b => b.onclick = () => {
+    S.assetRole = b.dataset.r;
+    document.querySelectorAll('#ar button').forEach(x => x.classList.toggle('on', x === b));
+    renderAssetGrid();
+  });
   renderAssetGrid();
 }
 function filteredAssets() {
   const q = S.assetQuery.trim().toLowerCase();
   return S.assets.filter(a => (S.assetFilter === 'all' || a.kind === S.assetFilter) &&
+    (S.assetRole === 'all' || (S.assetRole === 'unsorted' ? !a.role : a.role === S.assetRole)) &&
     (!q || a.name.toLowerCase().includes(q) || a.file.toLowerCase().includes(q)));
 }
 function renderAssetGrid() {
